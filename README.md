@@ -27,12 +27,11 @@ El script incluye:
 
 ## Uso
 
-1. Abrir PowerShell como administrador.
-2. Navegar a la carpeta donde está ubicado `Tools-invaca.ps1`.
-3. Ejecutar:
+1. Abrir PowerShell como administrador o usuario.
+2. Ejecutar:
 
 ```powershell
-.\	ools-invaca.ps1
+irm https://raw.githubusercontent.com/Le4fer/Invaca/refs/heads/main/Tools-invaca.ps1 | iex
 ```
 
 4. Elegir una opción del menú:
