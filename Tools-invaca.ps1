@@ -48,15 +48,15 @@ function Ejecutar-InstaladorOffice {
         switch ($subOpcion) {
             "1" {
                 $nombreVersion = "Microsoft 365 ProPlus (x64)"
-                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_O365ProPlusRetail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=O365ProPlusRetail&platform=x64&language=es-mx&version=O16GA"
             }
             "2" {
                 $nombreVersion = "Office 2021 Professional Plus (x64)"
-                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_ProPlus2021Retail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=Professional2021Retail&platform=x64&language=es-mx&version=O16GA"
             }
             "3" {
                 $nombreVersion = "Office 2019 Professional Plus (x64)"
-                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_ProPlus2019Retail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=Professional2019Retail&platform=x64&language=es-mx&version=O16GA"
             }
             "4" {
                 $urlOffice = Read-Host "`nPegar URL directa del ejecutable (.exe)"
