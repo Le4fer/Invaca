@@ -9,7 +9,8 @@ function Mostrar-Menu {
     Write-Host "1. Activar Windows / Office (MAS)"
     Write-Host "2. Optimizar Sistema (Chris Titus Tech)"
     Write-Host "3. Especificaciones y Diagnóstico del Equipo"
-    Write-Host "4. Salir"
+    Write-Host "4. Instalar Microsoft Office"
+    Write-Host "5. Salir"
     Write-Host "=========================================" -ForegroundColor Cyan
 }
 
@@ -26,6 +27,81 @@ function Ejecutar-Optimizador {
     Start-Sleep -Seconds 2
 }
 
+function Ejecutar-InstaladorOffice {
+    do {
+        Clear-Host
+        Write-Host "=========================================" -ForegroundColor Cyan
+        Write-Host "      INSTALADOR DE MICROSOFT OFFICE     " -ForegroundColor Yellow
+        Write-Host "=========================================" -ForegroundColor Cyan
+        Write-Host "1. Microsoft 365 ProPlus (Español x64)"
+        Write-Host "2. Office 2021 Professional Plus (Español x64)"
+        Write-Host "3. Office 2019 Professional Plus (Español x64)"
+        Write-Host "4. Ingresar URL personalizada de descarga"
+        Write-Host "5. Abrir catálogo completo en el navegador (Massgrave)"
+        Write-Host "6. Volver al menú principal"
+        Write-Host "=========================================" -ForegroundColor Cyan
+        
+        $subOpcion = Read-Host "Selecciona una opción (1-6)"
+        $urlOffice = ""
+        $nombreVersion = ""
+
+        switch ($subOpcion) {
+            "1" {
+                $nombreVersion = "Microsoft 365 ProPlus (x64)"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_O365ProPlusRetail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
+            }
+            "2" {
+                $nombreVersion = "Office 2021 Professional Plus (x64)"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_ProPlus2021Retail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
+            }
+            "3" {
+                $nombreVersion = "Office 2019 Professional Plus (x64)"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_ProPlus2019Retail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
+            }
+            "4" {
+                $urlOffice = Read-Host "`nPegar URL directa del ejecutable (.exe)"
+                $nombreVersion = "Versión Personalizada"
+            }
+            "5" {
+                Write-Host "`n[*] Abriendo Massgrave C2R Links en el navegador predeterminado..." -ForegroundColor Green
+                Start-Process "https://massgrave.dev/office_c2r_links"
+                Start-Sleep -Seconds 2
+                continue
+            }
+            "6" { return }
+            default {
+                Write-Host "`nOpción no válida." -ForegroundColor Red
+                Start-Sleep -Seconds 1
+                continue
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($urlOffice)) {
+            $destino = "$env:TEMP\SetupOffice.exe"
+            
+            try {
+                Write-Host "`n[+] Preparando descarga de: $nombreVersion" -ForegroundColor Green
+                Write-Host "[*] Descargando desde servidores oficiales de Microsoft..." -ForegroundColor Gray
+                
+                Invoke-WebRequest -Uri $urlOffice -OutFile $destino -UseBasicParsing
+                
+                Write-Host "[✓] Descarga completada." -ForegroundColor Green
+                Write-Host "[*] Ejecutando instalador... Sigue los pasos en pantalla." -ForegroundColor Yellow
+                
+                Start-Process -FilePath $destino
+                Write-Host "[✓] Instalador iniciado en segundo plano." -ForegroundColor Green
+            }
+            catch {
+                Write-Host "`n[X] Error al descargar o ejecutar: $_" -ForegroundColor Red
+            }
+
+            Write-Host "`nPresiona Enter para continuar..." -ForegroundColor Gray
+            Read-Host
+        }
+
+    } while ($subOpcion -ne "6")
+}
+
 function Mostrar-Especificaciones {
     Clear-Host
     Write-Host "=========================================" -ForegroundColor Cyan
@@ -38,8 +114,7 @@ function Mostrar-Especificaciones {
     $compSystem = Get-CimInstance Win32_ComputerSystem
     $espacioTrabajo = if ($compSystem.PartOfDomain) {
         "Dominio: $($compSystem.Domain)"
-    }
-    else {
+    } else {
         "Grupo de Trabajo: $($compSystem.Workgroup)"
     }
 
@@ -60,7 +135,7 @@ function Mostrar-Especificaciones {
         default { "Desconocido/Onboard" }
     }
 
-    # 4. Red (Consulta directa a WMI: ultra compatible)
+    # 4. Red (Consulta directa a WMI)
     $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | Select-Object -First 1
     if (-not $net) {
         $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true } | Select-Object -First 1
@@ -72,8 +147,7 @@ function Mostrar-Especificaciones {
         $dnsServers = if ($net.DNSServerSearchOrder) { ($net.DNSServerSearchOrder) -join ", " } else { "No asignados" }
         $mac = $net.MACAddress
         $redNombre = $net.Description
-    }
-    else {
+    } else {
         $ip = "Sin Conexión"
         $gateway = "Sin Conexión"
         $dnsServers = "Sin Conexión"
@@ -82,9 +156,9 @@ function Mostrar-Especificaciones {
     }
 
     # 5. Discos de Almacenamiento
-    $physicalDisks = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{N = "SizeGB"; E = { [math]::Round($_.Size / 1GB, 2) } }
+    $physicalDisks = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{N="SizeGB";E={[math]::Round($_.Size / 1GB, 2)}}
 
-    # 6. Monitores (Decodificación EDID desde WMI)
+    # 6. Monitores
     $monitoresRaw = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue
     $listaMonitores = @()
     if ($monitoresRaw) {
@@ -94,8 +168,7 @@ function Mostrar-Especificaciones {
             if (-not $model) { $model = "Genérico / Estándar" }
             $listaMonitores += "$mfg - $model"
         }
-    }
-    else {
+    } else {
         $listaMonitores += "Pantalla Estándar / No detectado por EDID"
     }
 
@@ -105,7 +178,6 @@ function Mostrar-Especificaciones {
 
     $mouses = (Get-CimInstance Win32_PointingDevice | Select-Object -ExpandProperty Description) -join " | "
     if (-not $mouses) { $mouses = "No detectado" }
-
 
     # IMPRESIÓN EN PANTALLA
     Clear-Host
@@ -151,13 +223,14 @@ function Mostrar-Especificaciones {
 # Bucle principal
 do {
     Mostrar-Menu
-    $opcion = Read-Host "Selecciona una opción (1-4)"
+    $opcion = Read-Host "Selecciona una opción (1-5)"
     
     switch ($opcion) {
         "1" { Ejecutar-Activador }
         "2" { Ejecutar-Optimizador }
         "3" { Mostrar-Especificaciones }
-        "4" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
+        "4" { Ejecutar-InstaladorOffice }
+        "5" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
         default { Write-Host "`nOpción no válida, intenta de nuevo." -ForegroundColor Red; Start-Sleep -Seconds 2 }
     }
-} while ($opcion -ne "4")
+} while ($opcion -ne "5")
