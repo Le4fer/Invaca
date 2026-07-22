@@ -31,7 +31,7 @@ El script incluye:
 2. Ejecutar:
 
 ```powershell
-irm https://raw.githubusercontent.com/Le4fer/Invaca/refs/heads/main/Tools-invaca.ps1 | iex
+https://tinyurl.com/invacatools
 ```
 
 4. Elegir una opción del menú:
