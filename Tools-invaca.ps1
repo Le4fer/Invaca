@@ -79,20 +79,34 @@ function Ejecutar-InstaladorOffice {
         if (-not [string]::IsNullOrWhiteSpace($urlOffice)) {
             $destino = "$env:TEMP\SetupOffice.exe"
             
+            # Limpiar archivo previo si existe para evitar conflictos de corrupción
+            if (Test-Path $destino) {
+                Remove-Item $destino -Force -ErrorAction SilentlyContinue
+            }
+
             try {
                 Write-Host "`n[+] Preparando descarga de: $nombreVersion" -ForegroundColor Green
                 Write-Host "[*] Descargando desde servidores oficiales de Microsoft..." -ForegroundColor Gray
                 
-                Invoke-WebRequest -Uri $urlOffice -OutFile $destino -UseBasicParsing
-                
-                Write-Host "[✓] Descarga completada." -ForegroundColor Green
-                Write-Host "[*] Ejecutando instalador... Sigue los pasos en pantalla." -ForegroundColor Yellow
-                
-                Start-Process -FilePath $destino
-                Write-Host "[✓] Instalador iniciado en segundo plano." -ForegroundColor Green
+                # Usar curl.exe nativo si está disponible, sino WebClient de .NET (evita fallos de Invoke-WebRequest)
+                if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                    curl.exe -L -s -o $destino $urlOffice
+                } else {
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                    (New-Object System.Net.WebClient).DownloadFile($urlOffice, $destino)
+                }
+
+                # Validar que el archivo existe y pesa más de 0 bytes
+                if ((Test-Path $destino) -and ((Get-Item $destino).Length -gt 0)) {
+                    Write-Host "[✓] Descarga completada con éxito." -ForegroundColor Green
+                    Write-Host "[*] Lanzando instalador de Office..." -ForegroundColor Yellow
+                    Start-Process -FilePath $destino
+                } else {
+                    Write-Host "[X] Error: El archivo no se pudo descargar correctamente o fue bloqueado." -ForegroundColor Red
+                }
             }
             catch {
-                Write-Host "`n[X] Error al descargar o ejecutar: $_" -ForegroundColor Red
+                Write-Host "`n[X] Error durante la descarga o ejecución: $_" -ForegroundColor Red
             }
 
             Write-Host "`nPresiona Enter para continuar..." -ForegroundColor Gray
