@@ -343,11 +343,11 @@ function Ejecutar-ReparadorRed {
     }
 
     # Test Internet
-    $pingInet = Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet
+    $pingInet = Test-Connection -ComputerName "192.168.0.39" -Count 1 -Quiet
     $resInet = if ($pingInet) { "OK (Conexión Establecida)" } else { "FALLO (Sin Salida a Internet)" }
     $colorInet = if ($pingInet) { "Green" } else { "Red" }
     
-    Write-Host "  • Internet (8.8.8.8)      : " -NoNewline
+    Write-Host "  • Internet (192.168.0.39)      : " -NoNewline
     Write-Host $resInet -ForegroundColor $colorInet
 
     Write-Host "`n[✓] Proceso de red finalizado." -ForegroundColor Yellow
