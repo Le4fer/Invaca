@@ -10,7 +10,11 @@ function Mostrar-Menu {
     Write-Host "2. Optimizar Sistema (Chris Titus Tech)"
     Write-Host "3. Especificaciones y Diagnóstico del Equipo"
     Write-Host "4. Instalar Microsoft Office"
-    Write-Host "5. Salir"
+    Write-Host "5. Mantenimiento y Limpieza del Sistema"
+    Write-Host "6. Diagnóstico y Reparación de Red Express"
+    Write-Host "7. Destrabar Cola de Impresión (Spooler)"
+    Write-Host "8. Instalador de Software Esencial (Winget)"
+    Write-Host "9. Salir"
     Write-Host "=========================================" -ForegroundColor Cyan
 }
 
@@ -48,15 +52,15 @@ function Ejecutar-InstaladorOffice {
         switch ($subOpcion) {
             "1" {
                 $nombreVersion = "Microsoft 365 ProPlus (x64)"
-                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=O365ProPlusRetail&platform=x64&language=es-mx&version=O16GA"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_O365ProPlusRetail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
             }
             "2" {
                 $nombreVersion = "Office 2021 Professional Plus (x64)"
-                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=Professional2021Retail&platform=x64&language=es-mx&version=O16GA"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_ProPlus2021Retail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
             }
             "3" {
                 $nombreVersion = "Office 2019 Professional Plus (x64)"
-                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=Professional2019Retail&platform=x64&language=es-mx&version=O16GA"
+                $urlOffice = "https://c2rsetup.officeapps.live.com/c2r/sc/installer/16/es-es/Setup.x64.es-es_ProPlus2019Retail_af208573-0370-4966-9cfd-d558d1976a4a_TX_PR_ffn_.exe"
             }
             "4" {
                 $urlOffice = Read-Host "`nPegar URL directa del ejecutable (.exe)"
@@ -79,7 +83,6 @@ function Ejecutar-InstaladorOffice {
         if (-not [string]::IsNullOrWhiteSpace($urlOffice)) {
             $destino = "$env:TEMP\SetupOffice.exe"
             
-            # Limpiar archivo previo si existe para evitar conflictos de corrupción
             if (Test-Path $destino) {
                 Remove-Item $destino -Force -ErrorAction SilentlyContinue
             }
@@ -88,7 +91,6 @@ function Ejecutar-InstaladorOffice {
                 Write-Host "`n[+] Preparando descarga de: $nombreVersion" -ForegroundColor Green
                 Write-Host "[*] Descargando desde servidores oficiales de Microsoft..." -ForegroundColor Gray
                 
-                # Usar curl.exe nativo si está disponible, sino WebClient de .NET (evita fallos de Invoke-WebRequest)
                 if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
                     curl.exe -L -s -o $destino $urlOffice
                 } else {
@@ -96,7 +98,6 @@ function Ejecutar-InstaladorOffice {
                     (New-Object System.Net.WebClient).DownloadFile($urlOffice, $destino)
                 }
 
-                # Validar que el archivo existe y pesa más de 0 bytes
                 if ((Test-Path $destino) -and ((Get-Item $destino).Length -gt 0)) {
                     Write-Host "[✓] Descarga completada con éxito." -ForegroundColor Green
                     Write-Host "[*] Lanzando instalador de Office..." -ForegroundColor Yellow
@@ -230,21 +231,200 @@ function Mostrar-Especificaciones {
     Write-Host "  • Mouse / Puntero   : " -NoNewline; Write-Host $mouses -ForegroundColor White
 
     Write-Host "==================================================================" -ForegroundColor Cyan
-    Write-Host "`nPresiona Enter para volver al menú principal..." -ForegroundColor Gray
+
+    # Opción opcional de exportar a TXT
+    $exportar = Read-Host "`n¿Deseas exportar esta ficha a un archivo de texto en el Escritorio? (S/N)"
+    if ($exportar -eq "S" -or $exportar -eq "s") {
+        $rutaDesktop = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
+        $archivoReporte = "$rutaDesktop\Ficha_INVACA_$nombreEquipo.txt"
+
+        $contenidoReporte = @"
+==================================================================
+               FICHA TÉCNICA DEL SISTEMA - INVACA                 
+==================================================================
+[SISTEMA Y ESPACIO DE TRABAJO]
+• Nombre del Equipo : $nombreEquipo
+• Entorno / Dominio : $espacioTrabajo
+
+[RED Y CONECTIVIDAD]
+• Dirección IP      : $ip
+• Puerta de Enlace  : $gateway
+• Servidores DNS    : $dnsServers
+• Dirección MAC     : $mac
+• Tarjeta de Red    : $redNombre
+
+[HARDWARE PRINCIPAL]
+• Procesador        : $cpu
+• Memoria RAM       : $ramGB GB ($ramType)
+
+[ALMACENAMIENTO FÍSICO]
+"@
+        foreach ($disk in $physicalDisks) {
+            $tipoDisco = if ($disk.MediaType) { $disk.MediaType } else { "SSD/NVMe/HDD" }
+            $contenidoReporte += "`n• Disco             : $($disk.FriendlyName) [$tipoDisco - $($disk.SizeGB) GB]"
+        }
+
+        $contenidoReporte += "`n`n[PERIFÉRICOS Y PANTALLAS]"
+        foreach ($mon in $listaMonitores) {
+            $contenidoReporte += "`n• Monitor           : $mon"
+        }
+        $contenidoReporte += "`n• Teclado(s)        : $teclados"
+        $contenidoReporte += "`n• Mouse / Puntero   : $mouses"
+        $contenidoReporte += "`n=================================================================="
+
+        $contenidoReporte | Out-File -FilePath $archivoReporte -Encoding utf8
+        Write-Host "[✓] Ficha guardada en: $archivoReporte" -ForegroundColor Green
+        Start-Sleep -Seconds 2
+    }
+    else {
+        Write-Host "`nPresiona Enter para volver al menú principal..." -ForegroundColor Gray
+        Read-Host
+    }
+}
+
+function Ejecutar-Mantenimiento {
+    Clear-Host
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "      MANTENIMIENTO Y LIMPIEZA           " -ForegroundColor Yellow
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "1. Limpieza de Archivos Temporales y Caché"
+    Write-Host "2. Reparar Integridad del Sistema (SFC + DISM)"
+    Write-Host "3. Volver al menú principal"
+    Write-Host "=========================================" -ForegroundColor Cyan
+
+    $subOp = Read-Host "Selecciona una opción (1-3)"
+
+    switch ($subOp) {
+        "1" {
+            Write-Host "`n[+] Borrando archivos temporales del usuario y del sistema..." -ForegroundColor Green
+            Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "[✓] Limpieza de temporales completada." -ForegroundColor Yellow
+            Start-Sleep -Seconds 2
+        }
+        "2" {
+            Write-Host "`n[+] Ejecutando comprobación e integridad con SFC y DISM..." -ForegroundColor Green
+            Write-Host "[*] Reparando imagen del sistema (DISM)..." -ForegroundColor Gray
+            dism /online /cleanup-image /restorehealth
+            Write-Host "[*] Escaneando archivos corruptos de Windows (SFC)..." -ForegroundColor Gray
+            sfc /scannow
+            Write-Host "[✓] Diagnóstico de integridad finalizado." -ForegroundColor Yellow
+            Start-Sleep -Seconds 3
+        }
+        "3" { return }
+    }
+}
+
+function Ejecutar-ReparadorRed {
+    Clear-Host
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "    REPARACIÓN Y DIAGNÓSTICO DE RED      " -ForegroundColor Yellow
+    Write-Host "=========================================" -ForegroundColor Cyan
+
+    Write-Host "`n[1/3] Limpiando caché DNS..." -ForegroundColor Green
+    ipconfig /flushdns
+
+    Write-Host "`n[2/3] Restableciendo catálogo Winsock..." -ForegroundColor Green
+    netsh winsock reset | Out-Null
+
+    Write-Host "`n[3/3] Probando conectividad de red..." -ForegroundColor Green
+    
+    # Test Puerta de enlace
+    $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | Select-Object -First 1
+    if ($net -and $net.DefaultIPGateway) {
+        $gw = $net.DefaultIPGateway[0]
+        $pingGW = Test-Connection -ComputerName $gw -Count 1 -Quiet
+        $resGW = if ($pingGW) { "OK (Responde)" } else { "FALLO (No responde)" }
+        Write-Host "  • Puerta de Enlace ($gw): " -NoNewline; Write-Host $resGW -ForegroundColor (if ($pingGW) { "Green" } else { "Red" })
+    }
+
+    # Test Internet
+    $pingInet = Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet
+    $resInet = if ($pingInet) { "OK (Conexión Establecida)" } else { "FALLO (Sin Salida a Internet)" }
+    Write-Host "  • Internet (8.8.8.8)      : " -NoNewline; Write-Host $resInet -ForegroundColor (if ($pingInet) { "Green" } else { "Red" })
+
+    Write-Host "`n[✓] Proceso de red finalizado." -ForegroundColor Yellow
+    Write-Host "Presiona Enter para continuar..." -ForegroundColor Gray
     Read-Host
+}
+
+function Ejecutar-DestrabarImpresoras {
+    Clear-Host
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "   DESTRABAR COLA DE IMPRESIÓN (SPOOLER) " -ForegroundColor Yellow
+    Write-Host "=========================================" -ForegroundColor Cyan
+
+    Write-Host "`n[+] Deteniendo servicio de impresión (Spooler)..." -ForegroundColor Green
+    Stop-Service -Name Spooler -Force -ErrorAction SilentlyContinue
+
+    Write-Host "[+] Limpiando trabajos de impresión atascados..." -ForegroundColor Green
+    Remove-Item -Path "$env:SystemRoot\System32\spool\PRINTERS\*" -Force -Recurse -ErrorAction SilentlyContinue
+
+    Write-Host "[+] Reiniciando servicio de impresión..." -ForegroundColor Green
+    Start-Service -Name Spooler
+
+    Write-Host "`n[✓] Cola de impresión limpiada y servicio restablecido con éxito." -ForegroundColor Yellow
+    Start-Sleep -Seconds 3
+}
+
+function Ejecutar-InstaladorSoftware {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host "`n[X] Winget no está disponible en este sistema." -ForegroundColor Red
+        Write-Host "[*] Asegúrate de tener Windows 10/11 actualizado con App Installer." -ForegroundColor Gray
+        Start-Sleep -Seconds 3
+        return
+    }
+
+    do {
+        Clear-Host
+        Write-Host "=========================================" -ForegroundColor Cyan
+        Write-Host "     INSTALADOR DE SOFTWARE (WINGET)     " -ForegroundColor Yellow
+        Write-Host "=========================================" -ForegroundColor Cyan
+        Write-Host "1. Google Chrome"
+        Write-Host "2. 7-Zip"
+        Write-Host "3. Notepad++"
+        Write-Host "4. AnyDesk"
+        Write-Host "5. INSTALAR COMBO COMPLETO (Todo lo anterior)"
+        Write-Host "6. Volver al menú principal"
+        Write-Host "=========================================" -ForegroundColor Cyan
+
+        $subSoft = Read-Host "Selecciona una opción (1-6)"
+
+        switch ($subSoft) {
+            "1" { winget install --id Google.Chrome --silent --accept-source-agreements --accept-package-agreements }
+            "2" { winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements }
+            "3" { winget install --id Notepad++.Notepad++ --silent --accept-source-agreements --accept-package-agreements }
+            "4" { winget install --id AnyDeskSoftwareGmbH.AnyDesk --silent --accept-source-agreements --accept-package-agreements }
+            "5" {
+                Write-Host "`n[+] Instalando paquete de programas esenciales INVACA..." -ForegroundColor Green
+                winget install --id Google.Chrome --silent --accept-source-agreements --accept-package-agreements
+                winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
+                winget install --id Notepad++.Notepad++ --silent --accept-source-agreements --accept-package-agreements
+                winget install --id AnyDeskSoftwareGmbH.AnyDesk --silent --accept-source-agreements --accept-package-agreements
+                Write-Host "[✓] Combo completado." -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+            }
+            "6" { return }
+        }
+    } while ($subSoft -ne "6")
 }
 
 # Bucle principal
 do {
     Mostrar-Menu
-    $opcion = Read-Host "Selecciona una opción (1-5)"
+    $opcion = Read-Host "Selecciona una opción (1-9)"
     
     switch ($opcion) {
         "1" { Ejecutar-Activador }
         "2" { Ejecutar-Optimizador }
         "3" { Mostrar-Especificaciones }
         "4" { Ejecutar-InstaladorOffice }
-        "5" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
+        "5" { Ejecutar-Mantenimiento }
+        "6" { Ejecutar-ReparadorRed }
+        "7" { Ejecutar-DestrabarImpresoras }
+        "8" { Ejecutar-InstaladorSoftware }
+        "9" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
         default { Write-Host "`nOpción no válida, intenta de nuevo." -ForegroundColor Red; Start-Sleep -Seconds 2 }
     }
-} while ($opcion -ne "5")
+} while ($opcion -ne "9")
