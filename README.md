@@ -44,7 +44,7 @@
 ```powershell```
 `irm [tinyurl.com/invacatools](https://tinyurl.com/invacatools) | iex`
 
-Elegir una opción del menú principal:
+## Elegir una opción del menú principal:
 
 1: Activar Windows / Office (MAS)
 
@@ -64,7 +64,7 @@ Elegir una opción del menú principal:
 
 9: Salir
 
-Requisitos
+## Requisitos
 Windows 10/11 o Windows Server con PowerShell 5.1 o superior.
 
 Privilegios de Administrador para ejecutar tareas de mantenimiento, red e instalación de programas.
@@ -73,7 +73,7 @@ Conexión a Internet para la descarga de scripts, herramientas externas y paquet
 
 Permisos de ejecución (ExecutionPolicy) habilitados para scripts.
 
-Notas
+## Notas
 Las funciones de instalación de software requieren que el sistema cuente con el gestor de paquetes winget (App Installer).
 
 Las descargas de Office se realizan directamente desde los servidores oficiales de distribución Click-To-Run (C2R) de Microsoft.
