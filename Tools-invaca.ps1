@@ -392,28 +392,41 @@ function Ejecutar-InstaladorSoftware {
         Write-Host "3. Notepad++"
         Write-Host "4. AnyDesk"
         Write-Host "5. INSTALAR COMBO COMPLETO (Todo lo anterior)"
-        Write-Host "6. Volver al menú principal"
+        Write-Host "6. Reparar catálogo Winget (Error 0x8a15000f)"
+        Write-Host "7. Volver al menú principal"
         Write-Host "=========================================" -ForegroundColor Cyan
 
-        $subSoft = Read-Host "Selecciona una opción (1-6)"
+        $subSoft = Read-Host "Selecciona una opción (1-7)"
+        $params = "--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
 
         switch ($subSoft) {
-            "1" { winget install --id Google.Chrome --silent --accept-source-agreements --accept-package-agreements }
-            "2" { winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements }
-            "3" { winget install --id Notepad++.Notepad++ --silent --accept-source-agreements --accept-package-agreements }
-            "4" { winget install --id AnyDeskSoftwareGmbH.AnyDesk --silent --accept-source-agreements --accept-package-agreements }
+            "1" { winget install --id Google.Chrome $params }
+            "2" { winget install --id 7zip.7zip $params }
+            "3" { winget install --id Notepad++.Notepad++ $params }
+            "4" { winget install --id AnyDeskSoftwareGmbH.AnyDesk $params }
             "5" {
                 Write-Host "`n[+] Instalando paquete de programas esenciales INVACA..." -ForegroundColor Green
-                winget install --id Google.Chrome --silent --accept-source-agreements --accept-package-agreements
-                winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
-                winget install --id Notepad++.Notepad++ --silent --accept-source-agreements --accept-package-agreements
-                winget install --id AnyDeskSoftwareGmbH.AnyDesk --silent --accept-source-agreements --accept-package-agreements
-                Write-Host "[✓] Combo completado." -ForegroundColor Yellow
+                Write-Host "[*] Instalando Google Chrome..." -ForegroundColor Gray
+                winget install --id Google.Chrome $params
+                Write-Host "[*] Instalando 7-Zip..." -ForegroundColor Gray
+                winget install --id 7zip.7zip $params
+                Write-Host "[*] Instalando Notepad++..." -ForegroundColor Gray
+                winget install --id Notepad++.Notepad++ $params
+                Write-Host "[*] Instalando AnyDesk..." -ForegroundColor Gray
+                winget install --id AnyDeskSoftwareGmbH.AnyDesk $params
+                Write-Host "[✓] Proceso del combo finalizado." -ForegroundColor Yellow
                 Start-Sleep -Seconds 2
             }
-            "6" { return }
+            "6" {
+                Write-Host "`n[+] Reparando y restableciendo catálogos de Winget..." -ForegroundColor Green
+                winget source reset --force
+                winget source update
+                Write-Host "[✓] Catálogo reparado exitosamente. Intenta instalar de nuevo." -ForegroundColor Yellow
+                Start-Sleep -Seconds 3
+            }
+            "7" { return }
         }
-    } while ($subSoft -ne "6")
+    } while ($subSoft -ne "7")
 }
 
 # Bucle principal
