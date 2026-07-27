@@ -1,3 +1,17 @@
+# =========================================================================
+# VALIDACIÓN DE PERMISOS Y AUTO-ELEVACIÓN
+# =========================================================================
+$esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $esAdmin) {
+    Write-Host "`n[!] INVACA Tools requiere permisos de Administrador." -ForegroundColor Yellow
+    Write-Host "[*] Solicitando elevación de privilegios de Windows..." -ForegroundColor Cyan
+    
+    # Re-lanza la descarga y ejecución de tu script en una nueva ventana Elevada (RunAs)
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacatools | iex"
+    exit
+}
+
 # Ajustar codificación para evitar problemas con caracteres especiales
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -26,8 +40,10 @@ function Ejecutar-Activador {
 function Ejecutar-Optimizador {
     Write-Host "`n[+] Lanzando Herramienta de Optimización (Chris Titus Tech)..." -ForegroundColor Green
     $cmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iwr -useb https://christitus.com/win | iex"
-    Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", $cmd
-    Write-Host "[✓] Ventana de optimización iniciada." -ForegroundColor Yellow
+    
+    # Se agrega -Verb RunAs para evitar bloqueos por políticas de UAC
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", $cmd
+    Write-Host "[✓] Ventana de optimización iniciada con privilegios elevados." -ForegroundColor Yellow
     Start-Sleep -Seconds 2
 }
 
