@@ -590,7 +590,8 @@ do {
         "6" { Ejecutar-ReparadorRed }
         "7" { Ejecutar-DestrabarImpresoras }
         "8" { Ejecutar-InstaladorSoftware }
-        "9" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
+        "9" { Localizar-PuntoEthernet}
+        "0" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
         default { Write-Host "`nOpción no válida, intenta de nuevo." -ForegroundColor Red; Start-Sleep -Seconds 2 }
     }
 } while ($opcion -ne "9")
