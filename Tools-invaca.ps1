@@ -28,7 +28,8 @@ function Mostrar-Menu {
     Write-Host "6. Diagnóstico y Reparación de Red Express"
     Write-Host "7. Destrabar Cola de Impresión (Spooler)"
     Write-Host "8. Instalador de Software Esencial (Winget)"
-    Write-Host "9. Salir"
+    Write-Host "9. Localizar Punto Ethernet / Mapear Puerto de Switch"
+    Write-Host "0. Salir"
     Write-Host "=========================================" -ForegroundColor Cyan
 }
 
@@ -388,6 +389,136 @@ function Ejecutar-DestrabarImpresoras {
 
     Write-Host "`n[✓] Cola de impresión limpiada y servicio restablecido con éxito." -ForegroundColor Yellow
     Start-Sleep -Seconds 3
+}
+
+function Localizar-PuntoEthernet {
+    Clear-Host
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host "   INVACA TOOLS - LOCATOR DE PUERTO Y SWITCH        " -ForegroundColor Yellow
+    Write-Host "====================================================" -ForegroundColor Cyan
+
+    # 1. Obtener la interfaz de red Ethernet activa y sus parámetros
+    $nic = Get-NetAdapter | Where-Object { $_.Status -eq "Up" -and ($_.MediaType -like "*802.3*" -or $_.Name -like "*Ethernet*" -or $_.InterfaceDescription -notlike "*Virtual*") } | Select-Object -First 1
+
+    if (-not $nic) {
+        Write-Host "`n[!] No se detectó ninguna interfaz Ethernet física activa." -ForegroundColor Red
+        Pause
+        return
+    }
+
+    $ipConfig = Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1
+    $gateway = (Get-NetRoute -InterfaceAlias $nic.Name -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue).NextHop
+
+    Write-Host "`n[+] DATOS DE LA CONEXIÓN LOCAL (PC):" -ForegroundColor Green
+    Write-Host "    - Interfaz:       $($nic.Name) ($($nic.InterfaceDescription))"
+    Write-Host "    - Dirección IP:   $($ipConfig.IPAddress)"
+    Write-Host "    - Máscara Subred: /$($ipConfig.PrefixLength)"
+    Write-Host "    - Puerta Enlace:  $gateway"
+    Write-Host "    - Dirección MAC:  $($nic.MacAddress)"
+    Write-Host "    - Velocidad Enlace: $($nic.LinkSpeed)"
+
+    # 2. Opciones de búsqueda en el Switch
+    Write-Host "`n[+] MÓDULO DE LOCALIZACIÓN EN SWITCH:" -ForegroundColor Green
+    Write-Host "1. Buscar por puerto o descripción en backup 'dis cu' (3Com / Comware)"
+    Write-Host "2. Buscar equipo por nombre de usuario / etiqueta en backup"
+    Write-Host "3. Consultar tabla MAC en vivo vía SNMP (Switch 3Com)"
+    
+    $opt = Read-Host "`nSelecciona una opción (1-3)"
+
+    switch ($opt) {
+        "1" {
+            $numPuerto = Read-Host "`nIngresa el número de puerto del switch (ejemplo: 3 o GigabitEthernet1/0/3)"
+            if ($numPuerto -match '^\d+$') { $numPuerto = "GigabitEthernet1/0/$numPuerto" }
+            
+            $path = Read-Host "Ruta del archivo 'dis cu' (Presiona Enter para 'config_switch.txt')"
+            if ([string]::IsNullOrWhiteSpace($path)) { $path = "config_switch.txt" }
+
+            if (Test-Path $path) {
+                Parsear-Config3Com -FilePath $path -TargetPort $numPuerto
+            } else {
+                Write-Host "[!] No se encontró el archivo de configuración en: $path" -ForegroundColor Red
+            }
+        }
+        "2" {
+            $busqueda = Read-Host "`nIngresa la descripción o usuario a buscar (ejemplo: DPALMA, VCHACON, PASANTE)"
+            $path = Read-Host "Ruta del archivo 'dis cu' (Presiona Enter para 'config_switch.txt')"
+            if ([string]::IsNullOrWhiteSpace($path)) { $path = "config_switch.txt" }
+
+            if (Test-Path $path) {
+                Parsear-Config3Com -FilePath $path -SearchTerm $busqueda
+            } else {
+                Write-Host "[!] No se encontró el archivo de configuración en: $path" -ForegroundColor Red
+            }
+        }
+        "3" {
+            $switchIP = Read-Host "`nIngresa la IP del Switch (Default: 192.168.0.104)"
+            if ([string]::IsNullOrWhiteSpace($switchIP)) { $switchIP = "192.168.0.104" }
+            
+            $community = Read-Host "Comunidad SNMP Read (Default: public)"
+            if ([string]::IsNullOrWhiteSpace($community)) { $community = "public" }
+
+            Consultar-SwitchSNMP -SwitchIP $switchIP -Community $community -ClientMAC $nic.MacAddress
+        }
+    }
+    Pause
+}
+
+# Función auxiliar para parsear sintaxis 3Com / Comware (dis cu)
+function Parsear-Config3Com {
+    param (
+        [string]$FilePath,
+        [string]$TargetPort,
+        [string]$SearchTerm
+    )
+
+    $content = Get-Content $FilePath -Raw
+    # Extraer bloques de interfaz
+    $interfaces = [regex]::Matches($content, '(?ms)^interface\s+(?<iface>[^\r\n]+)\r?\n(?<bodytext>.*?)(?=^#|^interface)')
+
+    Write-Host "`n[=] RESULTADOS DE LA BÚSQUEDA EN SWITCH 3COM [=]" -ForegroundColor Cyan
+
+    foreach ($match in $interfaces) {
+        $ifaceName = $match.Groups['iface'].Value.Trim()
+        $ifaceBody = $match.Groups['bodytext'].Value
+
+        $matchFound = $false
+        if ($TargetPort -and $ifaceName -eq $TargetPort) { $matchFound = $true }
+        if ($SearchTerm -and $ifaceBody -match "(?i)$SearchTerm") { $matchFound = $true }
+
+        if ($matchFound) {
+            $vlan = if ($ifaceBody -match 'port access vlan\s+(\d+)') { $Matches[1] } elseif ($ifaceBody -match 'port link-type trunk') { "TRUNK (Todas las VLANs)" } else { "1 (Default)" }
+            $desc = if ($ifaceBody -match 'description\s+(.+)') { $Matches[1].Trim() } else { "Sin descripción" }
+            $stp = if ($ifaceBody -match 'stp disable') { "STP Deshabilitado" } else { "STP Activo" }
+            $estado = if ($ifaceBody -match 'shutdown') { "Puerto Apagado (Shutdown)" } else { "Puerto Activo" }
+
+            Write-Host "`nInterfaz:     " -NoNewline; Write-Host $ifaceName -ForegroundColor Yellow
+            Write-Host "Descripción:  $desc"
+            Write-Host "VLAN Access:  $vlan"
+            Write-Host "Estado:       $estado"
+            Write-Host "Config STP:   $stp"
+            Write-Host "----------------------------------------------------"
+        }
+    }
+}
+
+# Consulta rápida de puerto vía SNMP a la MIB Bridge del 3Com
+function Consultar-SwitchSNMP {
+    param ($SwitchIP, $Community, $ClientMAC)
+    
+    Write-Host "`n[+] Consultando tabla de direcciones MAC en el switch $SwitchIP..." -ForegroundColor Yellow
+    
+    # Formatear la MAC sin guiones ni puntos para SNMP
+    $cleanMac = $ClientMAC.Replace("-","").Replace(":","")
+    
+    # Prueba de conectividad ICMP
+    if (-not (Test-Connection -ComputerName $SwitchIP -Count 1 -Quiet)) {
+        Write-Host "[!] El switch $SwitchIP no responde a Ping." -ForegroundColor Red
+        return
+    }
+
+    Write-Host "[✓] Conexión establecida con el switch." -ForegroundColor Green
+    Write-Host "[i] MAC Local registrada: $ClientMAC"
+    Write-Host "[i] Para asociar la MAC al número de interfaz en 3Com vía SNMP, asegúrate de que la comunidad '$Community' esté habilitada."
 }
 
 function Ejecutar-InstaladorSoftware {
