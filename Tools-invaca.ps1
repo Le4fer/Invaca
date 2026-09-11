@@ -394,10 +394,10 @@ function Ejecutar-DestrabarImpresoras {
 function Localizar-PuntoEthernet {
     Clear-Host
     Write-Host "====================================================" -ForegroundColor Cyan
-    Write-Host "   INVACA TOOLS - RASTREADOR AUTOMÁTICO DE PUERTO   " -ForegroundColor Yellow
+    Write-Host "   INVACA TOOLS - RASTREADOR MULTI-SWITCH RED IVC   " -ForegroundColor Yellow
     Write-Host "====================================================" -ForegroundColor Cyan
 
-    # 1. Obtener la interfaz de red FÍSICA (Excluyendo Hyper-V, vEthernet, WSL)
+    # 1. Obtener la interfaz de red FÍSICA activa
     $nic = Get-NetAdapter | Where-Object { 
         $_.Status -eq "Up" -and 
         $_.HardwareInterface -eq $true -and 
@@ -418,20 +418,26 @@ function Localizar-PuntoEthernet {
     Write-Host "`n[+] DATOS DE LA CONEXIÓN LOCAL:" -ForegroundColor Green
     Write-Host "    - Tarjeta Física: $($nic.InterfaceDescription)"
     Write-Host "    - Dirección IP:   $ipLocal"
-    Write-Host "    - Dirección MAC:  $($nic.MacAddress) (Formato Switch: $mac3com)"
+    Write-Host "    - Dirección MAC:  $($nic.MacAddress) (Formato 3Com: $mac3com)"
 
-    # 2. Refrescar tabla ARP haciendo ping al switch 3Com
-    $switchIP = "192.168.0.104"
-    Write-Host "`n[+] Generando tráfico hacia el Switch ($switchIP)..." -ForegroundColor Yellow
-    $null = Test-Connection -ComputerName $switchIP -Count 2 -Quiet
+    # Lista de switches configurados en la red
+    $listaSwitches = @(
+        @{ IP = "192.168.0.103"; Nombre = "PB" },
+        @{ IP = "192.168.0.104"; Nombre = "Mzz A" },
+        @{ IP = "192.168.0.105"; Nombre = "Mzz B" },
+        @{ IP = "192.168.0.106"; Nombre = "P4" },
+        @{ IP = "192.168.0.107"; Nombre = "P7" },
+        @{ IP = "192.168.0.108"; Nombre = "P8" },
+        @{ IP = "192.168.0.109"; Nombre = "P9" }
+    )
 
-    # 3. Función auxiliar para enviar comandos Telnet al Switch 3Com
+    # Función auxiliar Telnet rápida
     function Send-3ComCommand {
         param ($IP, $Commands)
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $connect = $tcp.BeginConnect($IP, 23, $null, $null)
-            if (-not $connect.AsyncWaitHandle.WaitOne(3000, $false)) { return $null }
+            if (-not $connect.AsyncWaitHandle.WaitOne(1500, $false)) { return $null }
             $tcp.EndConnect($connect)
             
             $stream = $tcp.GetStream()
@@ -441,7 +447,7 @@ function Localizar-PuntoEthernet {
             foreach ($cmd in $Commands) {
                 $bytes = [System.Text.Encoding]::ASCII.GetBytes("$cmd`n")
                 $stream.Write($bytes, 0, $bytes.Length)
-                Start-Sleep -Milliseconds 600
+                Start-Sleep -Milliseconds 400
                 
                 while ($stream.DataAvailable) {
                     $read = $stream.Read($buffer, 0, $buffer.Length)
@@ -455,39 +461,62 @@ function Localizar-PuntoEthernet {
         }
     }
 
-    Write-Host "[+] Consultando la tabla MAC en el Switch 3Com..." -ForegroundColor Yellow
+    Write-Host "`n[+] Escaneando switches de la red para rastrear puerto físico..." -ForegroundColor Yellow
+    $puertoEncontrado = $false
 
-    # Credenciales según la configuración actual del switch
-    $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
-    $resMac = Send-3ComCommand -IP $switchIP -Commands $cmdsLogin
+    foreach ($sw in $listaSwitches) {
+        Write-Host " -> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline
 
-    # Extraer el nombre de la interfaz devuelta por el switch
-    if ($resMac -match "(GigabitEthernet\d+/\d+/\d+|Ethernet\d+/\d+/\d+)") {
-        $puertoDetectado = $Matches[1]
-        Write-Host "`n[✓] PUERTO IDENTIFICADO EN EL SWITCH: " -NoNewline -ForegroundColor Green
-        Write-Host $puertoDetectado -ForegroundColor Yellow
-
-        Write-Host "`n[+] Obteniendo la configuración del puerto desde el switch...`n" -ForegroundColor Green
-
-        # Consultar la configuración específica del puerto encontrado
-        $cmdsConfig = @("manager", "manager", "display current-configuration interface $puertoDetectado")
-        $resConfig = Send-3ComCommand -IP $switchIP -Commands $cmdsConfig
-
-        # Limpiar la salida Telnet y mostrar solo el bloque del puerto
-        if ($resConfig -match "(?s)(interface $puertoDetectado.*?(?=#|\r?\nreturn))") {
-            Write-Host "====================================================" -ForegroundColor DarkGray
-            Write-Host $Matches[1].Trim() -ForegroundColor Cyan
-            Write-Host "====================================================" -ForegroundColor DarkGray
-        } else {
-            Write-Host "[!] No se pudo formatear el bloque de configuración." -ForegroundColor Red
+        # Test rápido ICMP
+        if (-not (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet)) {
+            Write-Host " [Inalcanzable]" -ForegroundColor DarkGray
+            continue
         }
-    } else {
-        Write-Host "`n[!] La dirección MAC ($mac3com) no se encontró en la tabla del switch." -ForegroundColor Red
-        Write-Host "    Verifica que el cable esté bien conectado o que el puerto no esté en Shutdown."
+
+        # Consultar MAC en el switch actual
+        $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
+        $resMac = Send-3ComCommand -IP $sw.IP -Commands $cmdsLogin
+
+        if ($resMac -match "(GigabitEthernet\d+/\d+/\d+|Ethernet\d+/\d+/\d+)") {
+            $interfazTemp = $Matches[1]
+
+            # Consultar configuración de esa interfaz para verificar si es Trunk o Puerto Final
+            $cmdsConfig = @("manager", "manager", "display current-configuration interface $interfazTemp")
+            $resConfig = Send-3ComCommand -IP $sw.IP -Commands $cmdsConfig
+
+            if ($resConfig -match "port link-type trunk") {
+                Write-Host " [MAC en Enlace Troncal -> $interfazTemp]" -ForegroundColor DarkYellow
+                # Es un puerto de interconexión entre switches, continuar buscando el switch final
+                continue
+            } else {
+                Write-Host " [¡ENCONTRADO!]" -ForegroundColor Green
+                Write-Host "`n====================================================" -ForegroundColor Cyan
+                Write-Host " UBICACIÓN DETECTADA: Switch $($sw.Nombre) ($($sw.IP))" -ForegroundColor Yellow
+                Write-Host " PUERTO FÍSICO:       $interfazTemp" -ForegroundColor Yellow
+                Write-Host "====================================================" -ForegroundColor Cyan
+                
+                if ($resConfig -match "(?s)(interface $interfazTemp.*?(?=#|\r?\nreturn))") {
+                    Write-Host "`n"
+                    Write-Host $Matches[1].Trim() -ForegroundColor Green
+                    Write-Host "`n====================================================" -ForegroundColor Cyan
+                }
+                
+                $puertoEncontrado = $true
+                break
+            }
+        } else {
+            Write-Host " [No registrado]" -ForegroundColor DarkGray
+        }
+    }
+
+    if (-not $puertoEncontrado) {
+        Write-Host "`n[!] No se encontró la dirección MAC en ningún puerto de acceso de la red." -ForegroundColor Red
+        Write-Host "    Prueba haciendo un ping continuo a la puerta de enlace para forzar el registro ARP."
     }
 
     Pause
 }
+
 function Ejecutar-InstaladorSoftware {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Write-Host "`n[X] Winget no está disponible en este sistema." -ForegroundColor Red
