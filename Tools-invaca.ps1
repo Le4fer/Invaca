@@ -29,7 +29,7 @@ function Mostrar-Menu {
     Write-Host "7. Destrabar Cola de Impresión (Spooler)"
     Write-Host "8. Instalador de Software Esencial (Winget)"
     Write-Host "9. Localizar Punto Ethernet / Mapear Puerto de Switch"
-    Write-Host "0. Salir"
+    Write-Host "S. Salir"
     Write-Host "=========================================" -ForegroundColor Cyan
 }
 
@@ -546,7 +546,7 @@ function Ejecutar-InstaladorSoftware {
 # Bucle principal
 do {
     Mostrar-Menu
-    $opcion = Read-Host "Selecciona una opción (1-9)"
+    $opcion = Read-Host "Selecciona una opción (1-9 o S)"
     
     switch ($opcion) {
         "1" { Ejecutar-Activador }
@@ -561,4 +561,4 @@ do {
         "o" { Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow; break }
         default { Write-Host "`nOpción no válida, intenta de nuevo." -ForegroundColor Red; Start-Sleep -Seconds 2 }
     }
-} while ($opcion -ne "o")
+} while ($opcion -ne "s")
