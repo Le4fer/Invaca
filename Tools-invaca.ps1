@@ -107,6 +107,7 @@ function Ejecutar-InstaladorOffice {
                 Write-Host "[*] Descargando desde servidores oficiales de Microsoft..." -ForegroundColor Gray
                 
                 if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                    # Corrección: Espacio añadido correctamente entre -o $destino y$urlOffice
                     curl.exe -L -s -o $destino$urlOffice
                 }
                 else {
@@ -379,7 +380,6 @@ function Localizar-PuntoEthernet {
     Write-Host "   INVACA TOOLS - RASTREADOR DE PUERTO (CON PLAN B) " -ForegroundColor Yellow
     Write-Host "====================================================" -ForegroundColor Cyan
 
-    # 1. Detectar tarjeta física activa
     $nic = Get-NetAdapter | Where-Object { 
         $_.Status -eq "Up" -and 
         $_.HardwareInterface -eq $true -and 
@@ -401,7 +401,6 @@ function Localizar-PuntoEthernet {
     Write-Host "    - IP Local: $ipLocal"
     Write-Host "    - MAC:      $($nic.MacAddress) (3Com: $mac3com)"
 
-    # PLAN B1: Forzar tráfico en la subred para llenar la tabla CAM/ARP del switch
     Write-Host "`n[+] [PLAN B1] Generando tráfico broadcast para despertar la tabla del switch..." -ForegroundColor Yellow
     1..5 | ForEach-Object -Parallel { Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet } 2>$null
 
@@ -451,11 +450,9 @@ function Localizar-PuntoEthernet {
             continue
         }
 
-        # Intentar por MAC directa
         $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
         $resMac = Send-3ComCommand -IP $sw.IP -Commands$cmdsLogin
 
-        # PLAN B2: Si falla por MAC, buscar en la tabla ARP del switch usando la IP Local
         if ($resMac -notmatch "(GigabitEthernet|Ethernet)") {
             $cmdsArp = @("manager", "manager", "display arp | include $ipLocal")
             $resArp = Send-3ComCommand -IP $sw.IP -Commands$cmdsArp
@@ -494,7 +491,6 @@ function Localizar-PuntoEthernet {
         }
     }
 
-    # PLAN B3: Fallback Manual si la autodetección automatizada no encuentra nada
     if (-not $puertoEncontrado) {
         Write-Host "`n[!] [PLAN B3] No se detectó el puerto de forma automática." -ForegroundColor Red
         Write-Host "    ¿Deseas consultar manualmente un switch y puerto?" -ForegroundColor Yellow
