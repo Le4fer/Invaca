@@ -271,7 +271,7 @@ function Mostrar-Especificaciones {
         $contenidoReporte += "`n• Mouse / Puntero   : $mouses"
         $contenidoReporte += "`n=================================================================="
 
-        $contenidoReporte | Out-File -FilePath$archivoReporte -Encoding utf8
+        $contenidoReporte \vert{} Out-File -FilePath$archivoReporte -Encoding utf8
         Write-Host "[✓] Ficha guardada en: $archivoReporte" -ForegroundColor Green
         Start-Sleep -Seconds 2
     }
