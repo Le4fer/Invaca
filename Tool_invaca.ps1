@@ -7,7 +7,7 @@ if (-not $esAdmin) {
     Write-Host "`n[!] INVACA Tools requiere permisos de Administrador." -ForegroundColor Yellow
     Write-Host "[*] Solicitando elevación de privilegios de Windows..." -ForegroundColor Cyan
     
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "Invoke-RestMethod tinyurl.com/invacatools | Invoke-Expression"
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacatools | iex"
     exit
 }
 
@@ -34,12 +34,12 @@ function Mostrar-Menu {
 
 function Ejecutar-Activador {
     Write-Host "`n[+] Lanzando Microsoft Activation Script (MAS)..." -ForegroundColor Green
-    Invoke-RestMethod https://get.activated.win | Invoke-Expression
+    irm https://get.activated.win | iex
 }
 
 function Ejecutar-Optimizador {
     Write-Host "`n[+] Lanzando Herramienta de Optimización (Chris Titus Tech)..." -ForegroundColor Green
-    $cmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing https://christitus.com/win | Invoke-Expression"
+    $cmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iwr -useb https://christitus.com/win | iex"
     
     Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", $cmd
     Write-Host "[✓] Ventana de optimización iniciada con privilegios elevados." -ForegroundColor Yellow
@@ -107,7 +107,6 @@ function Ejecutar-InstaladorOffice {
                 Write-Host "[*] Descargando desde servidores oficiales de Microsoft..." -ForegroundColor Gray
                 
                 if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-                    # Corrección: Espacio añadido correctamente entre -o $destino y$urlOffice
                     curl.exe -L -s -o $destino$urlOffice
                 }
                 else {
@@ -148,7 +147,6 @@ function Mostrar-Especificaciones {
     $cpu = (Get-CimInstance Win32_Processor).Name.Trim()
     $ramBytes =$compSystem.TotalPhysicalMemory
     $ramGB = [math]::Round($ramBytes / 1GB, 2)$ramModule = Get-CimInstance Win32_PhysicalMemory | Select-Object -First 1
-    
     $ramType = switch ($ramModule.SMBIOSMemoryType) {
         20 { "DDR" }
         21 { "DDR2" }
@@ -180,7 +178,6 @@ function Mostrar-Especificaciones {
     $physicalDisks = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{N = "SizeGB"; E = { [math]::Round($_.Size / 1GB, 2) } }
 
     $monitoresRaw = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue$listaMonitores = @()
-    
     if ($monitoresRaw) {
         foreach ($mon in$monitoresRaw) {
             $mfg = ($mon.ManufacturerName | Where-Object { $_ -ne 0 } \vert{} ForEach-Object { [char]$_ }) -join ''
@@ -380,6 +377,7 @@ function Localizar-PuntoEthernet {
     Write-Host "   INVACA TOOLS - RASTREADOR DE PUERTO (CON PLAN B) " -ForegroundColor Yellow
     Write-Host "====================================================" -ForegroundColor Cyan
 
+    # 1. Detectar tarjeta física activa
     $nic = Get-NetAdapter | Where-Object { 
         $_.Status -eq "Up" -and 
         $_.HardwareInterface -eq $true -and 
@@ -401,6 +399,7 @@ function Localizar-PuntoEthernet {
     Write-Host "    - IP Local: $ipLocal"
     Write-Host "    - MAC:      $($nic.MacAddress) (3Com: $mac3com)"
 
+    # PLAN B1: Forzar tráfico en la subred para llenar la tabla CAM/ARP del switch
     Write-Host "`n[+] [PLAN B1] Generando tráfico broadcast para despertar la tabla del switch..." -ForegroundColor Yellow
     1..5 | ForEach-Object -Parallel { Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet } 2>$null
 
@@ -450,9 +449,11 @@ function Localizar-PuntoEthernet {
             continue
         }
 
+        # Intentar por MAC directa
         $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
         $resMac = Send-3ComCommand -IP $sw.IP -Commands$cmdsLogin
 
+        # PLAN B2: Si falla por MAC, buscar en la tabla ARP del switch usando la IP Local
         if ($resMac -notmatch "(GigabitEthernet|Ethernet)") {
             $cmdsArp = @("manager", "manager", "display arp | include $ipLocal")
             $resArp = Send-3ComCommand -IP $sw.IP -Commands$cmdsArp
@@ -491,6 +492,7 @@ function Localizar-PuntoEthernet {
         }
     }
 
+    # PLAN B3: Fallback Manual si la autodetección automatizada no encuentra nada
     if (-not $puertoEncontrado) {
         Write-Host "`n[!] [PLAN B3] No se detectó el puerto de forma automática." -ForegroundColor Red
         Write-Host "    ¿Deseas consultar manualmente un switch y puerto?" -ForegroundColor Yellow
