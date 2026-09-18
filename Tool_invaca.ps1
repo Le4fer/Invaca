@@ -107,14 +107,14 @@ function Ejecutar-InstaladorOffice {
                 Write-Host "[*] Descargando desde servidores oficiales de Microsoft..." -ForegroundColor Gray
                 
                 if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-                    curl.exe -L -s -o $destino$urlOffice
+                    curl.exe -L -s -o $destino $urlOffice
                 }
                 else {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                     (New-Object System.Net.WebClient).DownloadFile($urlOffice,$destino)
                 }
 
-                if ((Test-Path $destino) -and ((Get-Item$destino).Length -gt 0)) {
+                if ((Test-Path $destino) -and ((Get-Item $destino).Length -gt 0)) {
                     Write-Host "[✓] Descarga completada con éxito." -ForegroundColor Green
                     Write-Host "[*] Lanzando instalador de Office..." -ForegroundColor Yellow
                     Start-Process -FilePath $destino
@@ -141,12 +141,14 @@ function Mostrar-Especificaciones {
     Write-Host "=========================================" -ForegroundColor Cyan
     Write-Host "[*] Recopilando datos de Hardware, Red y Periféricos..." -ForegroundColor Gray
 
-    $nombreEquipo = $env:COMPUTERNAME$compSystem = Get-CimInstance Win32_ComputerSystem
+    $nombreEquipo = $env:COMPUTERNAME
+    $compSystem = Get-CimInstance Win32_ComputerSystem
     $espacioTrabajo = if ($compSystem.PartOfDomain) { "Dominio: $($compSystem.Domain)" } else { "Grupo de Trabajo: $($compSystem.Workgroup)" }
 
     $cpu = (Get-CimInstance Win32_Processor).Name.Trim()
-    $ramBytes =$compSystem.TotalPhysicalMemory
-    $ramGB = [math]::Round($ramBytes / 1GB, 2)$ramModule = Get-CimInstance Win32_PhysicalMemory | Select-Object -First 1
+    $ramBytes = $compSystem.TotalPhysicalMemory
+    $ramGB = [math]::Round($ramBytes / 1GB, 2)
+    $ramModule = Get-CimInstance Win32_PhysicalMemory | Select-Object -First 1
     $ramType = switch ($ramModule.SMBIOSMemoryType) {
         20 { "DDR" }
         21 { "DDR2" }
@@ -156,16 +158,17 @@ function Mostrar-Especificaciones {
         default { "Desconocido/Onboard" }
     }
 
-    $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq$true -and $_.DefaultIPGateway -ne$null } | Select-Object -First 1
-    if (-not $net) {$net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq$true } | Select-Object -First 1
+    $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | Select-Object -First 1
+    if (-not $net) {
+        $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true } | Select-Object -First 1
     }
 
     if ($net) {
         $ip = ($net.IPAddress | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' }) -join ", "
         $gateway = if ($net.DefaultIPGateway) { ($net.DefaultIPGateway) -join ", " } else { "No asignada" }
         $dnsServers = if ($net.DNSServerSearchOrder) { ($net.DNSServerSearchOrder) -join ", " } else { "No asignados" }
-        $mac =$net.MACAddress
-        $redNombre =$net.Description
+        $mac = $net.MACAddress
+        $redNombre = $net.Description
     }
     else {
         $ip = "Sin Conexión"
@@ -177,13 +180,16 @@ function Mostrar-Especificaciones {
 
     $physicalDisks = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{N = "SizeGB"; E = { [math]::Round($_.Size / 1GB, 2) } }
 
-    $monitoresRaw = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue$listaMonitores = @()
+    $monitoresRaw = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue
+    $listaMonitores = @()
     if ($monitoresRaw) {
-        foreach ($mon in$monitoresRaw) {
-            $mfg = ($mon.ManufacturerName | Where-Object { $_ -ne 0 } \vert{} ForEach-Object { [char]$_ }) -join ''
-            $model = ($mon.UserFriendlyName | Where-Object { $_ -ne 0 } \vert{} ForEach-Object { [char]$_ }) -join ''
-            if (-not $model) {$model = "Genérico / Estándar" }
-            $listaMonitores += "$mfg -$model"
+        foreach ($mon in $monitoresRaw) {
+            $mfg = ($mon.ManufacturerName | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
+            $model = ($mon.UserFriendlyName | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
+            if (-not $model) {
+                $model = "Genérico / Estándar"
+            }
+            $listaMonitores += "$mfg - $model"
         }
     }
     else {
@@ -191,10 +197,14 @@ function Mostrar-Especificaciones {
     }
 
     $teclados = (Get-CimInstance Win32_Keyboard | Select-Object -ExpandProperty Description) -join " | "
-    if (-not $teclados) {$teclados = "No detectado" }
+    if (-not $teclados) {
+        $teclados = "No detectado"
+    }
 
     $mouses = (Get-CimInstance Win32_PointingDevice | Select-Object -ExpandProperty Description) -join " | "
-    if (-not $mouses) {$mouses = "No detectado" }
+    if (-not $mouses) {
+        $mouses = "No detectado"
+    }
 
     Clear-Host
     Write-Host "==================================================================" -ForegroundColor Cyan
@@ -225,7 +235,7 @@ function Mostrar-Especificaciones {
     }
 
     Write-Host "`n [PERIFÉRICOS Y PANTALLAS]" -ForegroundColor Green
-    foreach ($mon in$listaMonitores) {
+    foreach ($mon in $listaMonitores) {
         Write-Host "  • Monitor           : " -NoNewline; Write-Host $mon -ForegroundColor White
     }
     Write-Host "  • Teclado(s)        : " -NoNewline; Write-Host $teclados -ForegroundColor White
@@ -265,13 +275,14 @@ function Mostrar-Especificaciones {
         }
 
         $contenidoReporte += "`n`n[PERIFÉRICOS Y PANTALLAS]"
-        foreach ($mon in $listaMonitores) {$contenidoReporte += "`n• Monitor           : $mon"
+        foreach ($mon in $listaMonitores) {
+            $contenidoReporte += "`n• Monitor           : $mon"
         }
         $contenidoReporte += "`n• Teclado(s)        : $teclados"
         $contenidoReporte += "`n• Mouse / Puntero   : $mouses"
         $contenidoReporte += "`n=================================================================="
 
-        $contenidoReporte \vert{} Out-File -FilePath$archivoReporte -Encoding utf8
+        $contenidoReporte | Out-File -FilePath $archivoReporte -Encoding utf8
         Write-Host "[✓] Ficha guardada en: $archivoReporte" -ForegroundColor Green
         Start-Sleep -Seconds 2
     }
@@ -329,15 +340,15 @@ function Ejecutar-ReparadorRed {
 
     Write-Host "`n[3/3] Probando conectividad de red..." -ForegroundColor Green
     
-    $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq$true -and $_.DefaultIPGateway -ne$null } | Select-Object -First 1
-    if ($net -and$net.DefaultIPGateway) {
-        $gw =$net.DefaultIPGateway[0]
-        $pingGW = Test-Connection -ComputerName$gw -Count 1 -Quiet
+    $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | Select-Object -First 1
+    if ($net -and $net.DefaultIPGateway) {
+        $gw = $net.DefaultIPGateway[0]
+        $pingGW = Test-Connection -ComputerName $gw -Count 1 -Quiet
         $resGW = if ($pingGW) { "OK (Responde)" } else { "FALLO (No responde)" }
         $colorGW = if ($pingGW) { "Green" } else { "Red" }
         
         Write-Host "  • Puerta de Enlace ($gw): " -NoNewline
-        Write-Host $resGW -ForegroundColor$colorGW
+        Write-Host $resGW -ForegroundColor $colorGW
     }
 
     $pingInet = Test-Connection -ComputerName "192.168.0.39" -Count 1 -Quiet
@@ -345,7 +356,7 @@ function Ejecutar-ReparadorRed {
     $colorInet = if ($pingInet) { "Green" } else { "Red" }
     
     Write-Host "  • Internet (192.168.0.39)      : " -NoNewline
-    Write-Host $resInet -ForegroundColor$colorInet
+    Write-Host $resInet -ForegroundColor $colorInet
 
     Write-Host "`n[✓] Proceso de red finalizado." -ForegroundColor Yellow
     Write-Host "Presiona Enter para continuar..." -ForegroundColor Gray
@@ -390,9 +401,9 @@ function Localizar-PuntoEthernet {
         return
     }
 
-    $rawMac =$nic.MacAddress.Replace("-","").Replace(":","").ToLower()
+    $rawMac = $nic.MacAddress.Replace("-","").Replace(":","").ToLower()
     $mac3com = "$($rawMac.Substring(0,4))-$($rawMac.Substring(4,4))-$($rawMac.Substring(8,4))"
-    $ipLocal = (Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue \vert{} Where-Object {$_.IPAddress -notlike "169.254.*" }).IPAddress
+    $ipLocal = (Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {$_.IPAddress -notlike "169.254.*" }).IPAddress
 
     Write-Host "`n[+] DATOS LOCALES:" -ForegroundColor Green
     Write-Host "    - Interfaz: $($nic.Name) ($($nic.InterfaceDescription))"
@@ -414,17 +425,18 @@ function Localizar-PuntoEthernet {
     )
 
     function Send-3ComCommand {
-        param ($IP,$Commands)
+        param ($IP, $Commands)
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
-            $connect = $tcp.BeginConnect($IP, 23, $null,$null)
-            if (-not $connect.AsyncWaitHandle.WaitOne(1500, $false)) { return$null }
+            $connect = $tcp.BeginConnect($IP, 23, $null, $null)
+            if (-not $connect.AsyncWaitHandle.WaitOne(1500, $false)) { return $null }
             $tcp.EndConnect($connect)
             
-            $stream =$tcp.GetStream()
-            $buffer = New-Object byte[] 65536$output = ""
+            $stream = $tcp.GetStream()
+            $buffer = New-Object byte[] 65536
+            $output = ""
 
-            foreach ($cmd in$Commands) {
+            foreach ($cmd in $Commands) {
                 $bytes = [System.Text.Encoding]::ASCII.GetBytes("$cmd`n")
                 $stream.Write($bytes, 0, $bytes.Length)
                 Start-Sleep -Milliseconds 400
@@ -439,9 +451,9 @@ function Localizar-PuntoEthernet {
     }
 
     Write-Host "`n[+] Escaneando switches en busca de la MAC/IP..." -ForegroundColor Yellow
-    $puertoEncontrado =$false
+    $puertoEncontrado = $false
 
-    foreach ($sw in$listaSwitches) {
+    foreach ($sw in $listaSwitches) {
         Write-Host " -> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline
 
         if (-not (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet)) {
@@ -451,24 +463,25 @@ function Localizar-PuntoEthernet {
 
         # Intentar por MAC directa
         $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
-        $resMac = Send-3ComCommand -IP $sw.IP -Commands$cmdsLogin
+        $resMac = Send-3ComCommand -IP $sw.IP -Commands $cmdsLogin
 
         # PLAN B2: Si falla por MAC, buscar en la tabla ARP del switch usando la IP Local
         if ($resMac -notmatch "(GigabitEthernet|Ethernet)") {
             $cmdsArp = @("manager", "manager", "display arp | include $ipLocal")
-            $resArp = Send-3ComCommand -IP $sw.IP -Commands$cmdsArp
+            $resArp = Send-3ComCommand -IP $sw.IP -Commands $cmdsArp
 
             if ($resArp -match "(\w{4}-\w{4}-\w{4})") {
-                $macArp = $Matches[1]$cmdsLogin = @("manager", "manager", "display mac-address $macArp")
-                $resMac = Send-3ComCommand -IP $sw.IP -Commands$cmdsLogin
+                $macArp = $Matches[1]
+                $cmdsLogin = @("manager", "manager", "display mac-address $macArp")
+                $resMac = Send-3ComCommand -IP $sw.IP -Commands $cmdsLogin
             }
         }
 
         if ($resMac -match "(GigabitEthernet\d+/\d+/\d+|Ethernet\d+/\d+/\d+)") {
-            $interfazTemp =$Matches[1]
+            $interfazTemp = $Matches[1]
 
             $cmdsConfig = @("manager", "manager", "display current-configuration interface $interfazTemp")
-            $resConfig = Send-3ComCommand -IP $sw.IP -Commands$cmdsConfig
+            $resConfig = Send-3ComCommand -IP $sw.IP -Commands $cmdsConfig
 
             if ($resConfig -match "port link-type trunk") {
                 Write-Host " [MAC en Trunk -> $interfazTemp]" -ForegroundColor DarkYellow
