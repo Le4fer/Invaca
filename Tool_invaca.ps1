@@ -412,7 +412,10 @@ function Localizar-PuntoEthernet {
 
     # PLAN B1: Forzar tráfico en la subred para llenar la tabla CAM/ARP del switch
     Write-Host "`n[+] [PLAN B1] Generando tráfico broadcast para despertar la tabla del switch..." -ForegroundColor Yellow
-    1..5 | ForEach-Object -Parallel { Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet } 2>$null
+    # ✅ COMPATIBLE CON PowerShell 5.1:
+    foreach ($i in 1..5) {
+        Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet | Out-Null
+    }
 
     $listaSwitches = @(
         @{ IP = "192.168.0.103"; Nombre = "PB" },
