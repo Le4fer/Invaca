@@ -7,7 +7,7 @@ if (-not $esAdmin) {
     Write-Host "`n[!] INVACA Tools requiere permisos de Administrador." -ForegroundColor Yellow
     Write-Host "[*] Solicitando elevación de privilegios de Windows..." -ForegroundColor Cyan
     
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacatools | iex"
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "Invoke-RestMethod tinyurl.com/invacatools | Invoke-Expression"
     exit
 }
 
@@ -34,12 +34,12 @@ function Mostrar-Menu {
 
 function Ejecutar-Activador {
     Write-Host "`n[+] Lanzando Microsoft Activation Script (MAS)..." -ForegroundColor Green
-    irm https://get.activated.win | iex
+    Invoke-RestMethod https://get.activated.win | Invoke-Expression
 }
 
 function Ejecutar-Optimizador {
     Write-Host "`n[+] Lanzando Herramienta de Optimización (Chris Titus Tech)..." -ForegroundColor Green
-    $cmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iwr -useb https://christitus.com/win | iex"
+    $cmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing https://christitus.com/win | Invoke-Expression"
     
     Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", $cmd
     Write-Host "[✓] Ventana de optimización iniciada con privilegios elevados." -ForegroundColor Yellow
@@ -147,6 +147,7 @@ function Mostrar-Especificaciones {
     $cpu = (Get-CimInstance Win32_Processor).Name.Trim()
     $ramBytes =$compSystem.TotalPhysicalMemory
     $ramGB = [math]::Round($ramBytes / 1GB, 2)$ramModule = Get-CimInstance Win32_PhysicalMemory | Select-Object -First 1
+    
     $ramType = switch ($ramModule.SMBIOSMemoryType) {
         20 { "DDR" }
         21 { "DDR2" }
@@ -178,6 +179,7 @@ function Mostrar-Especificaciones {
     $physicalDisks = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{N = "SizeGB"; E = { [math]::Round($_.Size / 1GB, 2) } }
 
     $monitoresRaw = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue$listaMonitores = @()
+    
     if ($monitoresRaw) {
         foreach ($mon in$monitoresRaw) {
             $mfg = ($mon.ManufacturerName | Where-Object { $_ -ne 0 } \vert{} ForEach-Object { [char]$_ }) -join ''
