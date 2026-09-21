@@ -409,12 +409,19 @@ function Localizar-PuntoEthernet {
     Write-Host "    - Interfaz: $($nic.Name) ($($nic.InterfaceDescription))"
     Write-Host "    - IP Local: $ipLocal"
     Write-Host "    - MAC:      $($nic.MacAddress) (3Com: $mac3com)"
+    
+    # Detectar VLAN basada en la IP
+    $vlanDetectada = if ($ipLocal -match '192\.168\.(\d+)\.\d+') { 
+        $Matches[1] 
+    } else { 
+        "Desconocida" 
+    }
+    Write-Host "    - VLAN Detectada: $vlanDetectada" -ForegroundColor $(if ($vlanDetectada -eq "101") { "Green" } else { "Yellow" })
 
     # PLAN B1: Forzar tráfico en la subred para llenar la tabla CAM/ARP del switch
     Write-Host "`n[+] [PLAN B1] Generando tráfico broadcast para despertar la tabla del switch..." -ForegroundColor Yellow
-    # ✅ También compatible:
-    1..5 | ForEach-Object { 
-        Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet | Out-Null 
+    foreach ($i in 1..5) {
+        Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet -ErrorAction SilentlyContinue | Out-Null
     }
 
     $listaSwitches = @(
@@ -457,7 +464,7 @@ function Localizar-PuntoEthernet {
     $puertoEncontrado = $false
 
     foreach ($sw in $listaSwitches) {
-        Write-Host " -> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline
+        Write-Host "-> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline
 
         if (-not (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet)) {
             Write-Host " [Inalcanzable]" -ForegroundColor DarkGray
@@ -508,33 +515,84 @@ function Localizar-PuntoEthernet {
         }
     }
 
-    # PLAN B3: Fallback Manual si la autodetección automatizada no encuentra nada
+    # PLAN B3: Fallback Manual con BUCLE de reintentos
     if (-not $puertoEncontrado) {
         Write-Host "`n[!] [PLAN B3] No se detectó el puerto de forma automática." -ForegroundColor Red
-        Write-Host "    ¿Deseas consultar manualmente un switch y puerto?" -ForegroundColor Yellow
-        $opc = Read-Host "    (S/N)"
+        Write-Host "    Posibles causas:" -ForegroundColor Yellow
+        Write-Host "    - El puerto está apagado o sin conectar" -ForegroundColor Gray
+        Write-Host "    - La MAC no está aprendida en la tabla del switch" -ForegroundColor Gray
+        Write-Host "    - Problema de cableado o conectividad física" -ForegroundColor Gray
+        
+        $continuarConsultando = $true
+        
+        while ($continuarConsultando) {
+            Write-Host "`n    ¿Deseas consultar manualmente un switch y puerto?" -ForegroundColor Yellow
+            $opc = Read-Host "    (S/N)"
 
-        if ($opc -eq "S" -or $opc -eq "s") {
-            Write-Host "`nSelecciona el Switch:" -ForegroundColor Cyan
-            for ($i=0; $i -lt $listaSwitches.Count; $i++) {
-                Write-Host "  $($i+1). $($listaSwitches[$i].Nombre) ($($listaSwitches[$i].IP))"
-            }
-            $swIdx = [int](Read-Host "`nOpción (1-7)") - 1
-            $numPort = Read-Host "Ingresa el número de puerto (ejemplo: 3 o GigabitEthernet1/0/3)"
+            if ($opc -eq "S" -or $opc -eq "s") {
+                Write-Host "`nSelecciona el Switch:" -ForegroundColor Cyan
+                for ($i=0; $i -lt $listaSwitches.Count; $i++) {
+                    Write-Host "  $($i+1). $($listaSwitches[$i].Nombre) ($($listaSwitches[$i].IP))"
+                }
+                $swIdx = Read-Host "`nOpción (1-7)"
+                
+                # Validar que sea un número válido
+                if ($swIdx -match '^\d+$' -and [int]$swIdx -ge 1 -and [int]$swIdx -le 7) {
+                    $swIdx = [int]$swIdx - 1
+                    $numPort = Read-Host "Ingresa el número de puerto (ejemplo: 3 o GigabitEthernet1/0/3)"
 
-            if ($numPort -match '^\d+$') { $numPort = "GigabitEthernet1/0/$numPort" }
-            $swTarget = $listaSwitches[$swIdx]
+                    if ($numPort -match '^\d+$') { 
+                        $numPort = "GigabitEthernet1/0/$numPort" 
+                    }
+                    $swTarget = $listaSwitches[$swIdx]
 
-            Write-Host "`n[+] Consultando $numPort en Switch $($swTarget.Nombre)..." -ForegroundColor Yellow
-            $cmdsManual = @("manager", "manager", "display current-configuration interface $numPort")
-            $resManual = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsManual
+                    Write-Host "`n[+] Consultando $numPort en Switch $($swTarget.Nombre)..." -ForegroundColor Yellow
+                    $cmdsManual = @("manager", "manager", "display current-configuration interface $numPort")
+                    $resManual = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsManual
 
-            if ($resManual -match "(?s)(interface $numPort.*?(?=#|\r?\nreturn))") {
-                Write-Host "`n====================================================" -ForegroundColor Cyan
-                Write-Host $Matches[1].Trim() -ForegroundColor Green
-                Write-Host "====================================================" -ForegroundColor Cyan
+                    if ($resManual -match "(?s)(interface $numPort.*?(?=#|\r?\nreturn))") {
+                        $configPuerto = $Matches[1].Trim()
+                        Write-Host "`n====================================================" -ForegroundColor Cyan
+                        Write-Host $configPuerto -ForegroundColor Green
+                        Write-Host "====================================================" -ForegroundColor Cyan
+                        
+                        # Verificar VLAN del puerto
+                        if ($configPuerto -match "port access vlan (\d+)") {
+                            $vlanPuerto = $Matches[1]
+                            Write-Host "`n[INFO] VLAN del puerto: $vlanPuerto" -ForegroundColor Cyan
+                            if ($vlanPuerto -ne "101") {
+                                Write-Host "[!] ALERTA: El puerto está en VLAN $vlanPuerto pero debería estar en VLAN 101" -ForegroundColor Red
+                                Write-Host "[!] Este puerto requiere reconfiguración" -ForegroundColor Yellow
+                            } else {
+                                Write-Host "[✓] VLAN correcta (101)" -ForegroundColor Green
+                            }
+                        }
+                        
+                        # Preguntar si es el puerto correcto
+                        Write-Host "`n[?] ¿Es este el puerto correcto donde está conectado el equipo?" -ForegroundColor Yellow
+                        $esCorrecto = Read-Host "    (S/N)"
+                        
+                        if ($esCorrecto -eq "S" -or $esCorrecto -eq "s") {
+                            Write-Host "`n[✓] Puerto confirmado: $($swTarget.Nombre) - $numPort" -ForegroundColor Green
+                            $continuarConsultando = $false
+                        } else {
+                            Write-Host "`n[!] Puerto no es el correcto. Continuemos buscando..." -ForegroundColor Yellow
+                        }
+                    } else {
+                        Write-Host "[!] No se pudo obtener la configuración de ese puerto." -ForegroundColor Red
+                        Write-Host "    Posibles causas:" -ForegroundColor Gray
+                        Write-Host "    - El puerto no existe" -ForegroundColor Gray
+                        Write-Host "    - El switch no responde vía Telnet" -ForegroundColor Gray
+                        Write-Host "    - Credenciales incorrectas" -ForegroundColor Gray
+                    }
+                } else {
+                    Write-Host "`n[!] Opción inválida. Debe ser un número del 1 al 7." -ForegroundColor Red
+                }
+            } elseif ($opc -eq "N" -or $opc -eq "n") {
+                $continuarConsultando = $false
+                Write-Host "`n[!] Búsqueda manual cancelada." -ForegroundColor Yellow
             } else {
-                Write-Host "[!] No se pudo obtener la configuración de ese puerto." -ForegroundColor Red
+                Write-Host "`n[!] Opción no válida. Ingresa S o N." -ForegroundColor Red
             }
         }
     }
