@@ -7,7 +7,7 @@ if (-not $esAdmin) {
     Write-Host "`n[!] INVACA Tools requiere permisos de Administrador." -ForegroundColor Yellow
     Write-Host "[*] Solicitando elevación de privilegios de Windows..." -ForegroundColor Cyan
     
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacatools | iex"
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacagtic | iex"
     exit
 }
 
