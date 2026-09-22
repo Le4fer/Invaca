@@ -429,11 +429,12 @@ function Localizar-PuntoEthernet {
         Write-Host "    - [!] ALERTA: Debería estar en VLAN 101" -ForegroundColor Red
     }
 
-    # PLAN B1: Forzar tráfico broadcast
+    # PLAN B1: Forzar tráfico broadcast para que el switch aprenda la MAC
     Write-Host "`n[+] [PLAN B1] Generando tráfico broadcast..." -ForegroundColor Yellow
     foreach ($i in 1..5) {
         Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet -ErrorAction SilentlyContinue | Out-Null
     }
+    Start-Sleep -Seconds 2
 
     $listaSwitches = @(
         @{ IP = "192.168.0.103"; Nombre = "PB" },
@@ -472,9 +473,8 @@ function Localizar-PuntoEthernet {
     }
 
     Write-Host "`n[+] Escaneando switches en busca de la MAC/IP..." -ForegroundColor Yellow
-    
-    $puertosEncontrados = @()
-    $puertoTrunkEncontrado = $null
+    $puertoEncontrado = $false
+    $macEncontrada = $null
 
     foreach ($sw in $listaSwitches) {
         Write-Host "-> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline
@@ -484,23 +484,26 @@ function Localizar-PuntoEthernet {
             continue
         }
 
-        # Buscar por MAC
+        # Intento 1: Buscar por MAC directa
         $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
         $resMac = Send-3ComCommand -IP $sw.IP -Commands $cmdsLogin
 
-        # Buscar por ARP si no encontró por MAC
+        # Intento 2: Si no encuentra por MAC, buscar por ARP (usando la IP)
         if ($resMac -notmatch "(GigabitEthernet|Ethernet)") {
+            Write-Host " [Buscando por ARP...]" -ForegroundColor DarkYellow
             $cmdsArp = @("manager", "manager", "display arp | include $ipLocal")
             $resArp = Send-3ComCommand -IP $sw.IP -Commands $cmdsArp
 
             if ($resArp -match "(\w{4}-\w{4}-\w{4})") {
                 $macArp = $Matches[1]
+                $macEncontrada = $macArp
+                # Ahora buscar esa MAC específica
                 $cmdsLogin = @("manager", "manager", "display mac-address $macArp")
                 $resMac = Send-3ComCommand -IP $sw.IP -Commands $cmdsLogin
             }
         }
 
-        # Analizar resultados
+        # Analizar resultado
         if ($resMac -match "(GigabitEthernet\d+/\d+/\d+|Ethernet\d+/\d+/\d+)") {
             $interfazTemp = $Matches[1]
             
@@ -510,71 +513,53 @@ function Localizar-PuntoEthernet {
 
             if ($resConfig -match "port link-type trunk") {
                 Write-Host " [TRUNK: $interfazTemp]" -ForegroundColor DarkYellow
-                # Guardar referencia del trunk encontrado
-                if (-not $puertoTrunkEncontrado) {
-                    $puertoTrunkEncontrado = @{
-                        Switch = $sw
-                        Puerto = $interfazTemp
-                        Config = $resConfig
-                    }
-                }
             } else {
                 Write-Host " [¡ENCONTRADO!: $interfazTemp]" -ForegroundColor Green
-                $puertosEncontrados += @{
-                    Switch = $sw
-                    Puerto = $interfazTemp
-                    Config = $resConfig
+                
+                # VERIFICACIÓN CRÍTICA: Confirmar que la MAC coincide
+                if ($resMac -match [regex]::Escape($mac3com)) {
+                    $macEncontrada = $mac3com
+                } elseif ($macEncontrada) {
+                    Write-Host "    MAC encontrada por ARP: $macEncontrada" -ForegroundColor Cyan
                 }
+                
+                Write-Host "`n====================================================" -ForegroundColor Cyan
+                Write-Host " UBICACIÓN DETECTADA:" -ForegroundColor Yellow
+                Write-Host "====================================================" -ForegroundColor Cyan
+                Write-Host " Switch: $($sw.Nombre) ($($sw.IP))" -ForegroundColor White
+                Write-Host " Puerto: $interfazTemp" -ForegroundColor White
+                Write-Host " MAC:    $macEncontrada" -ForegroundColor White
+                
+                if ($resConfig -match "port access vlan (\d+)") {
+                    $vlanPuerto = $Matches[1]
+                    Write-Host " VLAN:   $vlanPuerto" -ForegroundColor White
+                    if ($vlanPuerto -ne "101") {
+                        Write-Host "`n[!] ALERTA: Debería ser VLAN 101, es VLAN $vlanPuerto" -ForegroundColor Red
+                    }
+                }
+                
+                Write-Host "`nConfiguración del puerto:" -ForegroundColor Cyan
+                if ($resConfig -match "(?s)(interface $interfazTemp.*?(?=#|\r?\nreturn))") {
+                    Write-Host "$($Matches[1].Trim())" -ForegroundColor Gray
+                }
+                Write-Host "====================================================" -ForegroundColor Cyan
+                
+                $puertoEncontrado = $true
+                break
             }
         } else {
             Write-Host " [No registrado]" -ForegroundColor DarkGray
         }
     }
 
-    # Priorizar puertos de acceso sobre trunks
-    if ($puertosEncontrados.Count -gt 0) {
-        Write-Host "`n====================================================" -ForegroundColor Cyan
-        Write-Host " UBICACIÓN DETECTADA (Puerto de Acceso):" -ForegroundColor Yellow
-        Write-Host "====================================================" -ForegroundColor Cyan
-        
-        foreach ($puerto in $puertosEncontrados) {
-            Write-Host "`n Switch: $($puerto.Switch.Nombre) ($($puerto.Switch.IP))" -ForegroundColor Green
-            Write-Host " Puerto: $($puerto.Puerto)" -ForegroundColor Green
-            
-            if ($puerto.Config -match "(?s)(interface $($puerto.Puerto -replace '/', '\/').*?(?=#|\r?\nreturn))") {
-                Write-Host "`nConfiguración:" -ForegroundColor Cyan
-                Write-Host "$($Matches[1].Trim())" -ForegroundColor White
-                
-                # Verificar VLAN
-                if ($puerto.Config -match "port access vlan (\d+)") {
-                    $vlanPuerto = $Matches[1]
-                    Write-Host "`n[INFO] VLAN del puerto: $vlanPuerto" -ForegroundColor Cyan
-                    if ($vlanPuerto -ne "101") {
-                        Write-Host "[!] ALERTA: Debería estar en VLAN 101, está en VLAN $vlanPuerto" -ForegroundColor Red
-                    }
-                }
-            }
-        }
-    } elseif ($puertoTrunkEncontrado) {
-        # Solo encontró trunk
-        Write-Host "`n[!] [ALERTA] Solo se detectó en puerto TRUNK:" -ForegroundColor Yellow
-        Write-Host "    Switch: $($puertoTrunkEncontrado.Switch.Nombre)" -ForegroundColor Yellow
-        Write-Host "    Puerto: $($puertoTrunkEncontrado.Puerto) (TRUNK)" -ForegroundColor Yellow
-        Write-Host "`n[EXPLICACIÓN]:" -ForegroundColor Cyan
-        Write-Host "    - El puerto trunk lleva tráfico de múltiples VLANs" -ForegroundColor Gray
-        Write-Host "    - Tu equipo NO está conectado físicamente ahí" -ForegroundColor Gray
-        Write-Host "    - El tráfico pasa por el trunk porque está en VLAN $vlanDetectada" -ForegroundColor Gray
-        Write-Host "`n[RECOMENDACIÓN]:" -ForegroundColor Cyan
-        Write-Host "    - Debes consultar manualmente los puertos de acceso (1-48)" -ForegroundColor Gray
-        Write-Host "    - Verifica en qué puerto está conectado físicamente" -ForegroundColor Gray
-    } else {
-        Write-Host "`n[!] No se detectó el puerto automáticamente." -ForegroundColor Red
+    # Si no encontró automáticamente, permitir consulta manual CON VALIDACIÓN
+    if (-not $puertoEncontrado) {
+        Write-Host "`n[!] No se detectó automáticamente." -ForegroundColor Red
     }
-
-    # PLAN B3: Consulta manual mejorada
+    
     Write-Host "`n[?] ¿Deseas consultar manualmente puertos de acceso?" -ForegroundColor Yellow
     $opc = Read-Host "    (S/N)"
-
+    
     if ($opc -eq "S" -or $opc -eq "s") {
         $continuar = $true
         
@@ -587,7 +572,7 @@ function Localizar-PuntoEthernet {
             
             if ($swIdx -match '^\d+$' -and [int]$swIdx -ge 1 -and [int]$swIdx -le 7) {
                 $swIdx = [int]$swIdx - 1
-                $numPort = Read-Host "Ingresa el número de puerto (ejemplo: 5 o GigabitEthernet1/0/5)"
+                $numPort = Read-Host "Ingresa el número de puerto (ejemplo: 3 o GigabitEthernet1/0/3)"
 
                 if ($numPort -match '^\d+$') { 
                     $numPort = "GigabitEthernet1/0/$numPort" 
@@ -595,44 +580,81 @@ function Localizar-PuntoEthernet {
                 $swTarget = $listaSwitches[$swIdx]
 
                 Write-Host "`n[+] Consultando $numPort en Switch $($swTarget.Nombre)..." -ForegroundColor Yellow
+                
+                # Obtener configuración del puerto
                 $cmdsManual = @("manager", "manager", "display current-configuration interface $numPort")
                 $resManual = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsManual
-
+                
+                # VERIFICACIÓN CRÍTICA: Buscar MACs aprendidas en ESTE puerto específico
+                $cmdsMacPort = @("manager", "manager", "display mac-address | include $numPort")
+                $resMacPort = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsMacPort
+                
+                Write-Host "`n--- CONFIGURACIÓN DEL PUERTO ---" -ForegroundColor Cyan
                 if ($resManual -match "(?s)(interface $numPort.*?(?=#|\r?\nreturn))") {
-                    $configPuerto = $Matches[1].Trim()
-                    Write-Host "`n====================================================" -ForegroundColor Cyan
-                    Write-Host $configPuerto -ForegroundColor Green
-                    Write-Host "====================================================" -ForegroundColor Cyan
-                    
-                    # Verificar tipo de puerto
-                    if ($configPuerto -match "port link-type trunk") {
-                        Write-Host "[!] Este es un puerto TRUNK (uplink)" -ForegroundColor Red
-                        Write-Host "    No es un puerto de acceso para equipos" -ForegroundColor Yellow
+                    Write-Host $Matches[1].Trim() -ForegroundColor Green
+                } else {
+                    Write-Host "No se pudo obtener la configuración" -ForegroundColor Red
+                }
+                
+                # Verificar tipo de puerto
+                $esTrunk = $false
+                if ($resManual -match "port link-type trunk") {
+                    Write-Host "`n[!] Este es un puerto TRUNK (uplink)" -ForegroundColor Red
+                    Write-Host "    No es un puerto de acceso para equipos" -ForegroundColor Yellow
+                    $esTrunk = $true
+                } else {
+                    Write-Host "`n[OK] Este es un puerto de acceso" -ForegroundColor Green
+                }
+                
+                # Verificar VLAN
+                if ($resManual -match "port access vlan (\d+)") {
+                    $vlanPuerto = $Matches[1]
+                    Write-Host "INFO: VLAN configurada: $vlanPuerto" -ForegroundColor Cyan
+                    if ($vlanPuerto -ne "101") {
+                        Write-Host "[!] ALERTA: Debería ser VLAN 101, es VLAN $vlanPuerto" -ForegroundColor Red
                     } else {
-                        Write-Host "[✓] Este es un puerto de acceso" -ForegroundColor Green
+                        Write-Host "[OK] VLAN correcta (101)" -ForegroundColor Green
+                    }
+                }
+                
+                # MOSTRAR MACs APRENDIDAS EN ESTE PUERTO
+                Write-Host "`n--- MACs APRENDIDAS EN ESTE PUERTO ---" -ForegroundColor Cyan
+                if ($resMacPort -match "(\w{4}-\w{4}-\w{4})") {
+                    $macDelPuerto = $Matches[1]
+                    Write-Host "MAC encontrada: $macDelPuerto" -ForegroundColor White
+                    
+                    # COMPARAR CON TU MAC LOCAL
+                    if ($macDelPuerto -eq $mac3com) {
+                        Write-Host "[OK] ¡ESTA ES TU MAC! Este es TU puerto" -ForegroundColor Green
+                        Write-Host "[OK] Puerto confirmado: $($swTarget.Nombre) - $numPort" -ForegroundColor Green
                         
-                        # Verificar VLAN
-                        if ($configPuerto -match "port access vlan (\d+)") {
-                            $vlanPuerto = $Matches[1]
-                            Write-Host "`n[INFO] VLAN configurada: $vlanPuerto" -ForegroundColor Cyan
-                            if ($vlanPuerto -ne "101") {
-                                Write-Host "[!] ALERTA: Debería ser VLAN 101, es VLAN $vlanPuerto" -ForegroundColor Red
-                                Write-Host "[!] Requiere reconfiguración" -ForegroundColor Yellow
-                            } else {
-                                Write-Host "[✓] VLAN correcta (101)" -ForegroundColor Green
-                            }
+                        $continuar = $false
+                    } else {
+                        Write-Host "[!] Esta NO es tu MAC (tu MAC es: $mac3com)" -ForegroundColor Red
+                        Write-Host "[!] Este puerto NO es el correcto" -ForegroundColor Yellow
+                        
+                        Write-Host "`n[?] ¿Es este el puerto correcto de todas formas?" -ForegroundColor Yellow
+                        $esCorrecto = Read-Host "    (S/N)"
+                        
+                        if ($esCorrecto -eq "S" -or $esCorrecto -eq "s") {
+                            Write-Host "`n[OK] Puerto confirmado manualmente: $($swTarget.Nombre) - $numPort" -ForegroundColor Green
+                            $continuar = $false
                         }
                     }
+                } else {
+                    Write-Host "No hay MACs aprendidas en este puerto" -ForegroundColor Yellow
+                    Write-Host "Posibles causas:" -ForegroundColor Gray
+                    Write-Host "  - El puerto está apagado" -ForegroundColor Gray
+                    Write-Host "  - No hay dispositivo conectado" -ForegroundColor Gray
+                    Write-Host "  - El dispositivo no ha generado tráfico" -ForegroundColor Gray
                     
-                    Write-Host "`n[?] ¿Es este el puerto correcto?" -ForegroundColor Yellow
+                    Write-Host "`n[?] ¿Es este el puerto correcto de todas formas?" -ForegroundColor Yellow
                     $esCorrecto = Read-Host "    (S/N)"
                     
                     if ($esCorrecto -eq "S" -or $esCorrecto -eq "s") {
-                        Write-Host "`n[✓] Puerto confirmado: $($swTarget.Nombre) - $numPort" -ForegroundColor Green
+                        Write-Host "`n[OK] Puerto confirmado manualmente: $($swTarget.Nombre) - $numPort" -ForegroundColor Green
                         $continuar = $false
                     }
-                } else {
-                    Write-Host "[!] No se pudo obtener la configuración." -ForegroundColor Red
                 }
                 
                 if ($continuar) {
