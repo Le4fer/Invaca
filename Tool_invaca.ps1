@@ -1,13 +1,21 @@
 # =========================================================================
 # VALIDACIÓN DE PERMISOS Y AUTO-ELEVACIÓN
 # =========================================================================
+
+# 1. FORZAR TLS 1.2 ANTES DE CUALQUIER DESCARGA (Soluciona el error de la 1ra vez)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $esAdmin) {
     Write-Host "`n[!] INVACA Tools requiere permisos de Administrador." -ForegroundColor Yellow
     Write-Host "[*] Solicitando elevación de privilegios de Windows..." -ForegroundColor Cyan
     
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacatools | iex"
+    # 2. Usar la URL correcta y asegurar que la nueva ventana también use TLS 1.2
+    $scriptUrl = "https://tinyurl.com/invacagtic"
+    $command = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm '$scriptUrl' -UseBasicParsing | iex"
+    
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $command
     exit
 }
 
