@@ -1,7 +1,6 @@
 # =========================================================================
 # CONFIGURACIÓN INICIAL Y AUTO-ELEVACIÓN
 # =========================================================================
-# Forzar codificación UTF-8 para que los bordes y emojis se vean correctamente
 [console]::InputEncoding = [console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -9,37 +8,62 @@ $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 
 if (-not $esAdmin) {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("  🛡️  INVACA Tools requiere permisos de Administrador  " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    $ancho = 68
+    $linea = "═" * $ancho
+    Write-Host "╔$linea╗" -ForegroundColor DarkCyan
+    Write-Host "║" -ForegroundColor DarkCyan -NoNewline
+    Write-Host ("  🛡️  INVACA Tools requiere permisos de Administrador  ".PadRight($ancho + 1)) -ForegroundColor Yellow -NoNewline
+    Write-Host "║" -ForegroundColor DarkCyan
+    Write-Host "╚$linea╝" -ForegroundColor DarkCyan
     Write-Host "`n[*] Solicitando elevación de privilegios de Windows..." -ForegroundColor Cyan
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm tinyurl.com/invacagtic | iex"
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", "irm https://tinyurl.com/invacagtic | iex"
     exit
 }
 
 $Host.UI.RawUI.WindowTitle = "INVACA Tools | Dashboard de Administrador"
 
 # =========================================================================
+# FUNCIONES AUXILIARES DE DIBUJO (100% libre de errores de sintaxis)
+# =========================================================================
+function Escribir-Encabezado {
+    param([string]$Texto, [string]$Color = "Yellow")
+    $ancho = 68
+    $linea = "═" * $ancho
+    Write-Host "╔$linea╗" -ForegroundColor DarkCyan
+    Write-Host "║" -ForegroundColor DarkCyan -NoNewline
+    Write-Host ("  $Texto  ".PadRight($ancho + 1)) -ForegroundColor $Color -NoNewline
+    Write-Host "║" -ForegroundColor DarkCyan
+    Write-Host "╠$linea╣" -ForegroundColor DarkCyan
+}
+
+function Escribir-Fila {
+    param([string]$Texto, [string]$Color = "White")
+    $ancho = 68
+    Write-Host "║" -ForegroundColor DarkCyan -NoNewline
+    Write-Host ("  $Texto  ".PadRight($ancho + 1)) -ForegroundColor $Color -NoNewline
+    Write-Host "║" -ForegroundColor DarkCyan
+}
+
+function Cerrar-Caja {
+    $ancho = 68
+    $linea = "═" * $ancho
+    Write-Host "╚$linea╝" -ForegroundColor DarkCyan
+}
+
+# =========================================================================
 # FUNCIONES DEL DASHBOARD
 # =========================================================================
-
 function Mostrar-Dashboard {
     Clear-Host
-    
-    # --- PALETA DE COLORES ---
-    $cBorder  = "DarkCyan"
-    $cTitle   = "Yellow"
     $cAccent  = "Cyan"
     $cText    = "White"
     $cSuccess = "Green"
     $cWarning = "DarkYellow"
-    $cError   = "Red"
 
-    $ancho = 72
-    $linea = "═" * ($ancho - 2)
+    $ancho = 68
+    $linea = "═" * $ancho
 
-    # --- RECOPILACIÓN RÁPIDA PARA EL HEADER ---
-    $os = Get-CimInstance Win32_OperatingSystem
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
     $ramLibre = [math]::Round(($os.FreePhysicalMemory / 1MB), 2)
     $ramTotal = [math]::Round(($os.TotalVisibleMemorySize / 1MB), 2)
     $uptime = (Get-Date) - $os.LastBootUpTime
@@ -48,31 +72,19 @@ function Mostrar-Dashboard {
     $net = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -ne "127.0.0.1" } | Select-Object -First 1
     $ip = if ($net) { $net.IPAddress } else { "Offline" }
 
-    # --- DIBUJAR HEADER ---
-    Write-Host "╔$linea╗" -ForegroundColor $cBorder
-    Write-Host "║" -ForegroundColor $cBorder -NoNewline
-    Write-Host ("{0,$ancho-2}" -f "🛡️  INVACA TOOLS - CENTRO DE COMANDO IT  🛡️") -ForegroundColor $cTitle
-    Write-Host "╠$linea╣" -ForegroundColor $cBorder
+    Write-Host "╔$linea╗" -ForegroundColor DarkCyan
+    Write-Host "║" -ForegroundColor DarkCyan -NoNewline
+    Write-Host ("  🛡️  INVACA TOOLS - CENTRO DE COMANDO IT  🛡️  ".PadRight($ancho + 1)) -ForegroundColor Yellow -NoNewline
+    Write-Host "║" -ForegroundColor DarkCyan
+    Write-Host "╠$linea╣" -ForegroundColor DarkCyan
     
-    Write-Host "║" -ForegroundColor $cBorder -NoNewline
-    Write-Host "  👤 Usuario: " -NoNewline -ForegroundColor $cText
-    Write-Host ("{0,-22}" -f "$env:USERNAME@$env:COMPUTERNAME") -ForegroundColor $cAccent -NoNewline
-    Write-Host "  🌐 IP: " -NoNewline -ForegroundColor $cText
-    Write-Host ("{0,-15}" -f $ip) -ForegroundColor $cSuccess -NoNewline
-    Write-Host "  ⏱️ Up: " -NoNewline -ForegroundColor $cText
-    Write-Host $uptimeStr -ForegroundColor $cWarning
-    
-    Write-Host "║" -ForegroundColor $cBorder -NoNewline
-    Write-Host "  💾 RAM: " -NoNewline -ForegroundColor $cText
-    Write-Host ("{0} / {1} GB" -f $ramLibre, $ramTotal) -ForegroundColor $cAccent -NoNewline
-    Write-Host ("{0,28}" -f "📅 ") -NoNewline -ForegroundColor $cText
-    Write-Host (Get-Date -Format "yyyy-MM-dd HH:mm") -ForegroundColor $cWarning
+    $fila1 = "👤 Usuario: {0,-18} 🌐 IP: {1,-15} ⏱️ Up: {2}" -f "$env:USERNAME@$env:COMPUTERNAME", $ip, $uptimeStr
+    Escribir-Fila -Texto $fila1 -Color White
 
-    # --- DIBUJAR MENÚ ---
-    Write-Host "╠$linea╣" -ForegroundColor $cBorder
-    Write-Host "║" -ForegroundColor $cBorder -NoNewline
-    Write-Host ("{0,$ancho-2}" -f "📋 SELECCIONA UNA HERRAMIENTA") -ForegroundColor $cTitle
-    Write-Host "╠$linea╣" -ForegroundColor $cBorder
+    $fila2 = "💾 RAM: {0} / {1} GB {2} 📅 {3}" -f $ramLibre, $ramTotal, (" " * 12), (Get-Date -Format "yyyy-MM-dd HH:mm")
+    Escribir-Fila -Texto $fila2 -Color White
+
+    Escribir-Encabezado -Texto "📋 SELECCIONA UNA HERRAMIENTA"
 
     $menuItems = @(
         @{ Num = "1"; Icon = "🚀"; Desc = "Activar Windows / Office (MAS)" }
@@ -87,47 +99,40 @@ function Mostrar-Dashboard {
     )
 
     foreach ($item in $menuItems) {
-        Write-Host "║" -ForegroundColor $cBorder -NoNewline
+        Write-Host "║" -ForegroundColor DarkCyan -NoNewline
         Write-Host "   [" -ForegroundColor $cText -NoNewline
         Write-Host $item.Num -ForegroundColor $cSuccess -NoNewline
         Write-Host "] " -ForegroundColor $cText -NoNewline
         Write-Host $item.Icon -NoNewline
         Write-Host "  " -NoNewline
-        Write-Host ("{0,-53}" -f $item.Desc) -ForegroundColor $cText
+        Write-Host ("{0,-51}" -f $item.Desc) -ForegroundColor $cText -NoNewline
+        Write-Host "║" -ForegroundColor DarkCyan
     }
 
-    Write-Host "╠$linea╣" -ForegroundColor $cBorder
-    Write-Host "║" -ForegroundColor $cBorder -NoNewline
+    Write-Host "╠$linea╣" -ForegroundColor DarkCyan
+    Write-Host "║" -ForegroundColor DarkCyan -NoNewline
     Write-Host "   [" -ForegroundColor $cText -NoNewline
-    Write-Host "S" -ForegroundColor $cError -NoNewline
+    Write-Host "S" -ForegroundColor Red -NoNewline
     Write-Host "] " -ForegroundColor $cText -NoNewline
     Write-Host "🚪" -NoNewline
     Write-Host "  " -NoNewline
-    Write-Host ("{0,-53}" -f "Salir del Dashboard") -ForegroundColor $cText
-    Write-Host "╚$linea╝" -ForegroundColor $cBorder
+    Write-Host ("{0,-51}" -f "Salir del Dashboard") -ForegroundColor $cText -NoNewline
+    Write-Host "║" -ForegroundColor DarkCyan
+    Cerrar-Caja
     
     Write-Host ""
     Write-Host "   ➤ " -ForegroundColor $cAccent -NoNewline
 }
 
-# =========================================================================
-# FUNCIONES DE HERRAMIENTAS (Con estilo mejorado)
-# =========================================================================
-
 function Ejecutar-Activador {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("  🚀 Lanzando Microsoft Activation Script (MAS)..." -padright 68) -NoNewline -ForegroundColor Green; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    Escribir-Encabezado -Texto "🚀 Lanzando Microsoft Activation Script (MAS)..." -Color Green
     irm https://get.activated.win | iex
 }
 
 function Ejecutar-Optimizador {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("  ⚡ Iniciando Optimización (Chris Titus Tech)..." -padright 68) -NoNewline -ForegroundColor Green; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
-    
+    Escribir-Encabezado -Texto "⚡ Iniciando Optimización (Chris Titus Tech)..." -Color Green
     $cmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iwr -useb https://christitus.com/win | iex"
     Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-Command", $cmd
     Write-Host "`n[✓] Ventana de optimización iniciada con privilegios elevados." -ForegroundColor Yellow
@@ -137,16 +142,14 @@ function Ejecutar-Optimizador {
 function Ejecutar-InstaladorOffice {
     do {
         Clear-Host
-        Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-        Write-Host "║" -NoNewline; Write-Host ("      📦 INSTALADOR DE MICROSOFT OFFICE      " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-        Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-        Write-Host "║   [1] Microsoft 365 ProPlus (Español x64)" -ForegroundColor White
-        Write-Host "║   [2] Office 2021 Professional Plus (Español x64)" -ForegroundColor White
-        Write-Host "║   [3] Office 2019 Professional Plus (Español x64)" -ForegroundColor White
-        Write-Host "║   [4] Ingresar URL personalizada de descarga" -ForegroundColor White
-        Write-Host "║   [5] Abrir catálogo completo en navegador (Massgrave)" -ForegroundColor White
-        Write-Host "║   [6] Volver al menú principal" -ForegroundColor White
-        Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+        Escribir-Encabezado -Texto "📦 INSTALADOR DE MICROSOFT OFFICE"
+        Escribir-Fila -Texto "[1] Microsoft 365 ProPlus (Español x64)"
+        Escribir-Fila -Texto "[2] Office 2021 Professional Plus (Español x64)"
+        Escribir-Fila -Texto "[3] Office 2019 Professional Plus (Español x64)"
+        Escribir-Fila -Texto "[4] Ingresar URL personalizada de descarga"
+        Escribir-Fila -Texto "[5] Abrir catálogo completo en navegador (Massgrave)"
+        Escribir-Fila -Texto "[6] Volver al menú principal"
+        Cerrar-Caja
         
         $subOpcion = Read-Host "`n   ➤ Selecciona una opción (1-6)"
         $urlOffice = ""; $nombreVersion = ""
@@ -196,50 +199,34 @@ function Ejecutar-InstaladorOffice {
 
 function Mostrar-Especificaciones {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("     📊 INFORMACIÓN Y AUDITORÍA DEL SISTEMA      " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("  [*] Recopilando datos de Hardware y Red..." -padright 68) -NoNewline -ForegroundColor Gray; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    Escribir-Encabezado -Texto "📊 INFORMACIÓN Y AUDITORÍA DEL SISTEMA"
+    Escribir-Fila -Texto "[*] Recopilando datos de Hardware y Red..." -Color Gray
+    Cerrar-Caja
 
     $nombreEquipo = $env:COMPUTERNAME
-    $compSystem = Get-CimInstance Win32_ComputerSystem
+    $compSystem = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
     $espacioTrabajo = if ($compSystem.PartOfDomain) { "Dominio: $($compSystem.Domain)" } else { "Grupo de Trabajo: $($compSystem.Workgroup)" }
-    $cpu = (Get-CimInstance Win32_Processor).Name.Trim()
+    $cpu = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue).Name.Trim()
     $ramBytes = $compSystem.TotalPhysicalMemory
     $ramGB = [math]::Round($ramBytes / 1GB, 2)
-    $ramModule = Get-CimInstance Win32_PhysicalMemory | Select-Object -First 1
+    $ramModule = Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | Select-Object -First 1
     $ramType = switch ($ramModule.SMBIOSMemoryType) { 20 {"DDR"}; 21 {"DDR2"}; 24 {"DDR3"}; 26 {"DDR4"}; 34 {"DDR5"}; default {"Desconocido"} }
 
-    $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | Select-Object -First 1
-    if (-not $net) { $net = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true } | Select-Object -First 1 }
+    $net = Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | Select-Object -First 1
+    if (-not $net) { $net = Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPEnabled -eq $true } | Select-Object -First 1 }
     
     $ip = if ($net) { ($net.IPAddress | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' }) -join ", " } else { "Sin Conexión" }
-    $gateway = if ($net -and $net.DefaultIPGateway) { ($net.DefaultIPGateway) -join ", " } else { "No asignada" }
     $mac = if ($net) { $net.MACAddress } else { "N/A" }
 
-    $physicalDisks = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{N = "SizeGB"; E = { [math]::Round($_.Size / 1GB, 2) } }
-
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("               FICHA TÉCNICA DEL SISTEMA                " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-    
-    Write-Host "║  🖥️  Equipo : " -NoNewline -ForegroundColor Cyan; Write-Host ("{0,-48}" -f $nombreEquipo) -NoNewline -ForegroundColor White; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  🌐 Entorno : " -NoNewline -ForegroundColor Cyan; Write-Host ("{0,-48}" -f $espacioTrabajo) -NoNewline -ForegroundColor White; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  ⚡ CPU     : " -NoNewline -ForegroundColor Cyan; Write-Host ("{0,-48}" -f $cpu) -NoNewline -ForegroundColor White; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  💾 RAM     : " -NoNewline -ForegroundColor Cyan; Write-Host ("{0,-48}" -f "$ramGB GB ($ramType)") -NoNewline -ForegroundColor White; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  🌍 IP      : " -NoNewline -ForegroundColor Cyan; Write-Host ("{0,-48}" -f $ip) -NoNewline -ForegroundColor White; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  🔗 MAC     : " -NoNewline -ForegroundColor Cyan; Write-Host ("{0,-48}" -f $mac) -NoNewline -ForegroundColor White; Write-Host "║" -ForegroundColor DarkCyan
-    
-    Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  💿 ALMACENAMIENTO:" -ForegroundColor Cyan
-    foreach ($disk in $physicalDisks) {
-        $tipoDisco = if ($disk.MediaType) { $disk.MediaType } else { "SSD/NVMe/HDD" }
-        $diskStr = "  • $($disk.FriendlyName) [$tipoDisco - $($disk.SizeGB) GB]"
-        Write-Host "║    $diskStr" -ForegroundColor White
-    }
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    Escribir-Encabezado -Texto "FICHA TÉCNICA DEL SISTEMA"
+    Escribir-Fila -Texto "🖥️ Equipo: $nombreEquipo" -Color Cyan
+    Escribir-Fila -Texto "🌐 Entorno: $espacioTrabajo" -Color White
+    Escribir-Fila -Texto "⚡ CPU: $cpu" -Color White
+    Escribir-Fila -Texto "💾 RAM: $ramGB GB ($ramType)" -Color White
+    Escribir-Fila -Texto "🌍 IP: $ip" -Color White
+    Escribir-Fila -Texto "🔗 MAC: $mac" -Color White
+    Cerrar-Caja
 
     $exportar = Read-Host "`n   ➤ ¿Exportar a archivo de texto en el Escritorio? (S/N)"
     if ($exportar -eq "S" -or $exportar -eq "s") {
@@ -254,13 +241,11 @@ function Mostrar-Especificaciones {
 function Ejecutar-Mantenimiento {
     do {
         Clear-Host
-        Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-        Write-Host "║" -NoNewline; Write-Host ("      🧹 MANTENIMIENTO Y LIMPIEZA DEL SISTEMA      " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-        Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-        Write-Host "║   [1] Limpieza de Archivos Temporales y Caché" -ForegroundColor White
-        Write-Host "║   [2] Reparar Integridad del Sistema (SFC + DISM)" -ForegroundColor White
-        Write-Host "║   [3] Volver al menú principal" -ForegroundColor White
-        Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+        Escribir-Encabezado -Texto "🧹 MANTENIMIENTO Y LIMPIEZA DEL SISTEMA"
+        Escribir-Fila -Texto "[1] Limpieza de Archivos Temporales y Caché"
+        Escribir-Fila -Texto "[2] Reparar Integridad del Sistema (SFC + DISM)"
+        Escribir-Fila -Texto "[3] Volver al menú principal"
+        Cerrar-Caja
 
         $subOp = Read-Host "`n   ➤ Selecciona una opción (1-3)"
         switch ($subOp) {
@@ -283,57 +268,45 @@ function Ejecutar-Mantenimiento {
 
 function Ejecutar-ReparadorRed {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("    🌐 REPARACIÓN Y DIAGNÓSTICO DE RED EXPRESS       " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-
-    Write-Host "║  [1/3] Limpiando caché DNS..." -ForegroundColor Green
+    Escribir-Encabezado -Texto "🌐 REPARACIÓN Y DIAGNÓSTICO DE RED EXPRESS"
+    Write-Host "║  [1/3] Limpiando caché DNS..." -ForegroundColor DarkCyan -NoNewline; Write-Host " OK" -ForegroundColor Green
     ipconfig /flushdns | Out-Host
-    Write-Host "║  [2/3] Restableciendo catálogo Winsock..." -ForegroundColor Green
+    Write-Host "║  [2/3] Restableciendo catálogo Winsock..." -ForegroundColor DarkCyan -NoNewline; Write-Host " OK" -ForegroundColor Green
     netsh winsock reset | Out-Host
-    Write-Host "║  [3/3] Probando conectividad..." -ForegroundColor Green
+    Write-Host "║  [3/3] Probando conectividad..." -ForegroundColor DarkCyan -NoNewline
     
     $pingInet = Test-Connection -ComputerName "192.168.0.39" -Count 1 -Quiet -ErrorAction SilentlyContinue
     $resInet = if ($pingInet) { "OK (Conexión Establecida)" } else { "FALLO (Sin Salida a Internet)" }
     $colorInet = if ($pingInet) { "Green" } else { "Red" }
-    
-    Write-Host "║  • Internet (192.168.0.39) : " -NoNewline -ForegroundColor White
-    Write-Host $resInet -ForegroundColor $colorInet
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    Write-Host " $resInet" -ForegroundColor $colorInet
+    Cerrar-Caja
     Write-Host "`n   ➤ Presiona Enter para continuar..." -ForegroundColor Gray
     Read-Host
 }
 
 function Ejecutar-DestrabarImpresoras {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("   🖨️  DESTRABAR COLA DE IMPRESIÓN (SPOOLER)        " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-    
+    Escribir-Encabezado -Texto "🖨️ DESTRABAR COLA DE IMPRESIÓN (SPOOLER)"
     Write-Host "║  [+] Deteniendo servicio Spooler..." -ForegroundColor Green
     Stop-Service -Name Spooler -Force -ErrorAction SilentlyContinue
     Write-Host "║  [+] Limpiando trabajos atascados..." -ForegroundColor Green
     Remove-Item -Path "$env:SystemRoot\System32\spool\PRINTERS\*" -Force -Recurse -ErrorAction SilentlyContinue
     Write-Host "║  [+] Reiniciando servicio Spooler..." -ForegroundColor Green
     Start-Service -Name Spooler
-    
-    Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  [✓] Cola de impresión limpiada con éxito." -ForegroundColor Yellow
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    Escribir-Fila -Texto "[✓] Cola de impresión limpiada con éxito." -Color Yellow
+    Cerrar-Caja
     Start-Sleep -Seconds 3
 }
 
 function Localizar-PuntoEthernet {
     Clear-Host
-    Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-    Write-Host "║" -NoNewline; Write-Host ("   📍 RASTREADOR DE PUERTO DE SWITCH (CON PLAN B)    " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
+    Escribir-Encabezado -Texto "📍 RASTREADOR DE PUERTO DE SWITCH (CON PLAN B)"
 
     $nic = Get-NetAdapter | Where-Object { $_.Status -eq "Up" -and $_.HardwareInterface -eq $true -and $_.InterfaceDescription -notmatch "Virtual|Hyper-V|VMware|VirtualBox|vEthernet|TAP|TUN|Loopback" } | Select-Object -First 1
 
     if (-not $nic) {
-        Write-Host "║  [!] No se detectó interfaz Ethernet física activa." -ForegroundColor Red
-        Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+        Escribir-Fila -Texto "[!] No se detectó interfaz Ethernet física activa." -Color Red
+        Cerrar-Caja
         Pause; return
     }
 
@@ -341,16 +314,16 @@ function Localizar-PuntoEthernet {
     $mac3com = "$($rawMac.Substring(0,4))-$($rawMac.Substring(4,4))-$($rawMac.Substring(8,4))"
     $ipLocal = (Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {$_.IPAddress -notlike "169.254.*" }).IPAddress
 
-    Write-Host "║  🖥️  Interfaz: $($nic.Name)" -ForegroundColor White
-    Write-Host "║  🌐 IP Local : $ipLocal" -ForegroundColor White
-    Write-Host "║  🔗 MAC      : $($nic.MacAddress) (3Com: $mac3com)" -ForegroundColor White
+    Escribir-Fila -Texto "🖥️ Interfaz: $($nic.Name)" -Color White
+    Escribir-Fila -Texto "🌐 IP Local: $ipLocal" -Color White
+    Escribir-Fila -Texto "🔗 MAC: $($nic.MacAddress) (3Com: $mac3com)" -Color White
     
     $vlanDetectada = if ($ipLocal -match '192\.168\.(\d+)\.\d+') { $Matches[1] } else { "Desconocida" }
     $colorVlan = if ($vlanDetectada -eq "101") { "Green" } else { "Red" }
-    Write-Host "║  🏷️  VLAN Detectada: $vlanDetectada" -ForegroundColor $colorVlan
+    Escribir-Fila -Texto "🏷️ VLAN Detectada: $vlanDetectada" -Color $colorVlan
+    Cerrar-Caja
 
-    Write-Host "║" -ForegroundColor DarkCyan
-    Write-Host "║  [+] [PLAN B1] Generando tráfico broadcast..." -ForegroundColor Yellow
+    Write-Host "`n[+] [PLAN B1] Generando tráfico broadcast..." -ForegroundColor Yellow
     foreach ($i in 1..3) { Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet -ErrorAction SilentlyContinue | Out-Null }
 
     $listaSwitches = @(
@@ -381,11 +354,11 @@ function Localizar-PuntoEthernet {
         } catch { return $null }
     }
 
-    Write-Host "║  [+] Escaneando switches en busca de la MAC/IP..." -ForegroundColor Yellow
+    Write-Host "`n[+] Escaneando switches en busca de la MAC/IP..." -ForegroundColor Yellow
     $puertosEncontrados = @(); $puertoTrunkEncontrado = $null
 
     foreach ($sw in $listaSwitches) {
-        Write-Host "║  -> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline -ForegroundColor Gray
+        Write-Host "-> Verificando Switch $($sw.Nombre) ($($sw.IP))..." -NoNewline -ForegroundColor Gray
         if (-not (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet)) { Write-Host " [Inalcanzable]" -ForegroundColor DarkGray; continue }
 
         $cmdsLogin = @("manager", "manager", "display mac-address $mac3com")
@@ -412,17 +385,17 @@ function Localizar-PuntoEthernet {
         } else { Write-Host " [No registrado]" -ForegroundColor DarkGray }
     }
 
-    Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
+    Write-Host "`n========================================================" -ForegroundColor DarkCyan
     if ($puertosEncontrados.Count -gt 0) {
         foreach ($puerto in $puertosEncontrados) {
-            Write-Host "║  ✅ Switch: $($puerto.Switch.Nombre) | Puerto: $($puerto.Puerto)" -ForegroundColor Green
+            Write-Host "✅ Switch: $($puerto.Switch.Nombre) | Puerto: $($puerto.Puerto)" -ForegroundColor Green
         }
     } elseif ($puertoTrunkEncontrado) {
-        Write-Host "║  ⚠️  [ALERTA] Solo se detectó en puerto TRUNK: $($puertoTrunkEncontrado.Switch.Nombre) - $($puertoTrunkEncontrado.Puerto)" -ForegroundColor Yellow
+        Write-Host "⚠️  [ALERTA] Solo se detectó en puerto TRUNK: $($puertoTrunkEncontrado.Switch.Nombre) - $($puertoTrunkEncontrado.Puerto)" -ForegroundColor Yellow
     } else {
-        Write-Host "║  ❌ No se detectó el puerto automáticamente." -ForegroundColor Red
+        Write-Host "❌ No se detectó el puerto automáticamente." -ForegroundColor Red
     }
-    Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+    Write-Host "========================================================" -ForegroundColor DarkCyan
     Write-Host "`n   ➤ Presiona Enter para volver al menú..." -ForegroundColor Gray
     Read-Host
 }
@@ -434,17 +407,15 @@ function Ejecutar-InstaladorSoftware {
     }
     do {
         Clear-Host
-        Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-        Write-Host "║" -NoNewline; Write-Host ("     💿 INSTALADOR DE SOFTWARE (WINGET)          " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-        Write-Host "╠" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╣" -ForegroundColor DarkCyan
-        Write-Host "║   [1] Google Chrome" -ForegroundColor White
-        Write-Host "║   [2] 7-Zip" -ForegroundColor White
-        Write-Host "║   [3] Notepad++" -ForegroundColor White
-        Write-Host "║   [4] AnyDesk" -ForegroundColor White
-        Write-Host "║   [5] INSTALAR COMBO COMPLETO (Todo lo anterior)" -ForegroundColor Green
-        Write-Host "║   [6] Reparar catálogo Winget (Error 0x8a15000f)" -ForegroundColor White
-        Write-Host "║   [7] Volver al menú principal" -ForegroundColor White
-        Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+        Escribir-Encabezado -Texto "💿 INSTALADOR DE SOFTWARE (WINGET)"
+        Escribir-Fila -Texto "[1] Google Chrome"
+        Escribir-Fila -Texto "[2] 7-Zip"
+        Escribir-Fila -Texto "[3] Notepad++"
+        Escribir-Fila -Texto "[4] AnyDesk"
+        Escribir-Fila -Texto "[5] INSTALAR COMBO COMPLETO (Todo lo anterior)" -Color Green
+        Escribir-Fila -Texto "[6] Reparar catálogo Winget (Error 0x8a15000f)"
+        Escribir-Fila -Texto "[7] Volver al menú principal"
+        Cerrar-Caja
 
         $subSoft = Read-Host "`n   ➤ Selecciona una opción (1-7)"
         $params = "--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
@@ -489,9 +460,7 @@ do {
         "9" { Localizar-PuntoEthernet }
         "S" { 
             Clear-Host
-            Write-Host "╔" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╗" -ForegroundColor DarkCyan
-            Write-Host "║" -NoNewline; Write-Host ("  🚪 Saliendo de INVACA Tools. ¡Listo por hoy!  " -padright 68) -NoNewline -ForegroundColor Yellow; Write-Host "║" -ForegroundColor DarkCyan
-            Write-Host "╚" -NoNewline; Write-Host ("═" * 68) -NoNewline; Write-Host "╝" -ForegroundColor DarkCyan
+            Escribir-Encabezado -Texto "🚪 Saliendo de INVACA Tools. ¡Listo por hoy!" -Color Yellow
             Start-Sleep -Seconds 1.5
             exit 
         }
