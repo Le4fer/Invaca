@@ -413,7 +413,19 @@ function Localizar-PuntoEthernet {
     $mac3com = "$($rawMac.Substring(0,4))-$($rawMac.Substring(4,4))-$($rawMac.Substring(8,4))"
     $macCisco = $nic.MacAddress.Replace("-",":").ToLower()
     $macSinFormato = $rawMac
-    $ipLocal = (Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {$_.IPAddress -notlike "169.254.*" }).IPAddress
+    
+    # Obtener IP local (manejando APIPA 169.254)
+    $ipLocal = (Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+        Where-Object {$_.IPAddress -notlike "169.254.*" -and $_.IPAddress -ne "127.0.0.1"} | 
+        Select-Object -First 1).IPAddress
+    
+    # Si no hay IP válida, usar APIPA
+    if (-not $ipLocal) {
+        $ipLocal = (Get-NetIPAddress -InterfaceAlias $nic.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+            Select-Object -First 1).IPAddress
+        Write-Host "`n[!] ALERTA: No hay IP válida (posible problema de DHCP)" -ForegroundColor Red
+        Write-Host "    IP detectada: $ipLocal (APIPA - Sin DHCP)" -ForegroundColor Yellow
+    }
 
     Write-Host "`n[+] DATOS LOCALES:" -ForegroundColor Green
     Write-Host "    - Interfaz: $($nic.Name) ($($nic.InterfaceDescription))"
@@ -425,7 +437,7 @@ function Localizar-PuntoEthernet {
     $vlanDetectada = if ($ipLocal -match '192\.168\.(\d+)\.\d+') { 
         $Matches[1] 
     } else { 
-        "Desconocida" 
+        "Desconocida (IP: $ipLocal)" 
     }
     Write-Host "    - VLAN Detectada: $vlanDetectada" -ForegroundColor Cyan
 
@@ -465,35 +477,99 @@ function Localizar-PuntoEthernet {
         } catch { return $null }
     }
 
+    # Verificar conectividad con switches ANTES de buscar
+    Write-Host "`n[+] Verificando conectividad con switches..." -ForegroundColor Yellow
+    $switchesAlcanzables = @()
+    foreach ($sw in $listaSwitches) {
+        Write-Host "-> $($sw.Nombre) ($($sw.IP))..." -NoNewline
+        if (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+            Write-Host " [OK]" -ForegroundColor Green
+            $switchesAlcanzables += $sw
+        } else {
+            Write-Host " [Inalcanzable]" -ForegroundColor Red
+        }
+    }
+
+    if ($switchesAlcanzables.Count -eq 0) {
+        Write-Host "`n[!] CRÍTICO: Ningún switch es alcanzable desde este equipo." -ForegroundColor Red
+        Write-Host "    Causas posibles:" -ForegroundColor Yellow
+        Write-Host "    - El equipo tiene IP APIPA (169.254.x.x) y no está en la misma subred" -ForegroundColor Gray
+        Write-Host "    - El puerto del switch no tiene DHCP configurado" -ForegroundColor Gray
+        Write-Host "    - El puerto está en una VLAN diferente sin ruteo" -ForegroundColor Gray
+        Write-Host "    - Problema de cableado o puerto apagado" -ForegroundColor Gray
+        Write-Host "`n[!] SOLUCIÓN:" -ForegroundColor Cyan
+        Write-Host "    1. Conecta el equipo a un puerto que SÍ tenga DHCP (VLAN 101, 102, etc.)" -ForegroundColor Gray
+        Write-Host "    2. O asigna manualmente una IP en el rango 192.168.0.x/24" -ForegroundColor Gray
+        Write-Host "    3. O usa la opción de búsqueda manual si conoces el switch" -ForegroundColor Gray
+        
+        # Ofrecer asignar IP manual
+        Write-Host "`n[?] ¿Deseas asignar una IP manual temporal para poder consultar los switches?" -ForegroundColor Yellow
+        $asignarIP = Read-Host "    (S/N)"
+        
+        if ($asignarIP -eq "S" -or $asignarIP -eq "s") {
+            Write-Host "`nAsignando IP temporal 192.168.0.200/24..." -ForegroundColor Yellow
+            New-NetIPAddress -InterfaceAlias $nic.Name -IPAddress "192.168.0.200" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "[OK] IP asignada. Reintentando..." -ForegroundColor Green
+            Start-Sleep -Seconds 2
+            
+            # Re-verificar conectividad
+            $switchesAlcanzables = @()
+            foreach ($sw in $listaSwitches) {
+                if (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+                    $switchesAlcanzables += $sw
+                }
+            }
+            
+            if ($switchesAlcanzables.Count -eq 0) {
+                Write-Host "[!] Aún no hay conectividad. Verifica el cableado." -ForegroundColor Red
+                Pause
+                return
+            }
+        } else {
+            Pause
+            return
+        }
+    }
+
     # MÉTODO 1: Generar tráfico para que el switch aprenda la MAC
     Write-Host "`n[MÉTODO 1] Generando tráfico para despertar switches..." -ForegroundColor Yellow
-    $gateway = (Get-CimInstance Win32_NetworkAdapterConfiguration | 
-        Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | 
-        Select-Object -First 1).DefaultIPGateway[0]
     
-    for ($i = 1; $i -le 15; $i++) {
-        if ($gateway) {
+    # Obtener gateway (con validación)
+    $gateway = $null
+    $netConfig = Get-CimInstance Win32_NetworkAdapterConfiguration | 
+        Where-Object { $_.IPEnabled -eq $true -and $_.DefaultIPGateway -ne $null } | 
+        Select-Object -First 1
+    
+    if ($netConfig -and $netConfig.DefaultIPGateway -and $netConfig.DefaultIPGateway.Count -gt 0) {
+        $gateway = $netConfig.DefaultIPGateway[0]
+    }
+    
+    if ($gateway) {
+        Write-Host "    Gateway detectado: $gateway" -ForegroundColor Gray
+        for ($i = 1; $i -le 10; $i++) {
             Test-Connection -ComputerName $gateway -Count 1 -Quiet -ErrorAction SilentlyContinue | Out-Null
         }
-        Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet -ErrorAction SilentlyContinue | Out-Null
-        Start-Sleep -Milliseconds 100
+    } else {
+        Write-Host "    [!] No hay gateway (posible problema de DHCP)" -ForegroundColor Yellow
     }
+    
+    # Ping broadcast
+    for ($i = 1; $i -le 10; $i++) {
+        Test-Connection -ComputerName "192.168.0.255" -Count 1 -Quiet -ErrorAction SilentlyContinue | Out-Null
+    }
+    
+    Write-Host "    Esperando 5 segundos..." -ForegroundColor Gray
     Start-Sleep -Seconds 5
 
-    # MÉTODO 2: Buscar MAC en todos los switches (múltiples formatos)
+    # MÉTODO 2: Buscar MAC en todos los switches alcanzables
     Write-Host "`n[MÉTODO 2] Buscando MAC en tabla de switches..." -ForegroundColor Yellow
     $puertoEncontrado = $false
     $macEncontrada = $null
     $switchEncontrado = $null
     $interfazEncontrada = $null
 
-    foreach ($sw in $listaSwitches) {
-        Write-Host "-> Verificando $($sw.Nombre) ($($sw.IP))..." -NoNewline
-
-        if (-not (Test-Connection -ComputerName $sw.IP -Count 1 -Quiet)) {
-            Write-Host " [Inalcanzable]" -ForegroundColor DarkGray
-            continue
-        }
+    foreach ($sw in $switchesAlcanzables) {
+        Write-Host "-> $($sw.Nombre) ($($sw.IP))..." -NoNewline
 
         # Intentar con múltiples formatos de MAC
         $formatosMac = @($mac3com, $macCisco, $macSinFormato)
@@ -525,7 +601,7 @@ function Localizar-PuntoEthernet {
         }
 
         # Si no encontró por MAC, buscar por ARP
-        if (-not $encontrado) {
+        if (-not $encontrado -and $ipLocal -and $ipLocal -notlike "169.254.*") {
             Write-Host " [Buscando por ARP...]" -ForegroundColor DarkYellow
             $cmdsArp = @("manager", "manager", "display arp | include $ipLocal")
             $resArp = Send-3ComCommand -IP $sw.IP -Commands $cmdsArp -Esperar 600
@@ -554,6 +630,8 @@ function Localizar-PuntoEthernet {
             } else {
                 Write-Host " [No registrado]" -ForegroundColor DarkGray
             }
+        } else {
+            Write-Host " [No registrado]" -ForegroundColor DarkGray
         }
 
         if ($puertoEncontrado) { break }
@@ -581,13 +659,9 @@ function Localizar-PuntoEthernet {
         Write-Host "====================================================" -ForegroundColor Cyan
     }
 
-    # MÉTODO 3: Búsqueda manual rápida (si no encontró automáticamente)
+    # MÉTODO 3: Búsqueda manual
     if (-not $puertoEncontrado) {
         Write-Host "`n[!] No se detectó automáticamente." -ForegroundColor Red
-        Write-Host "    Posibles causas:" -ForegroundColor Yellow
-        Write-Host "    - Puerto sin configurar (VLAN default)" -ForegroundColor Gray
-        Write-Host "    - Puerto administrativamente down" -ForegroundColor Gray
-        Write-Host "    - Switch no está aprendiendo la MAC" -ForegroundColor Gray
     }
 
     Write-Host "`n[MÉTODO 3] Búsqueda manual rápida" -ForegroundColor Yellow
@@ -597,7 +671,6 @@ function Localizar-PuntoEthernet {
     $opcionManual = Read-Host "`nSelecciona opción (1-3)"
 
     if ($opcionManual -eq "1") {
-        # Consulta manual de puerto específico
         Write-Host "`nSelecciona el Switch:" -ForegroundColor Cyan
         for ($i=0; $i -lt $listaSwitches.Count; $i++) {
             Write-Host "  $($i+1). $($listaSwitches[$i].Nombre) ($($listaSwitches[$i].IP))"
@@ -612,11 +685,9 @@ function Localizar-PuntoEthernet {
 
             Write-Host "`n[+] Consultando $numPort en $($swTarget.Nombre)..." -ForegroundColor Yellow
             
-            # Verificar MACs en ese puerto
             $cmdsMacPuerto = @("manager", "manager", "display mac-address | include $numPort")
             $resMacPuerto = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsMacPuerto -Esperar 600
             
-            # Verificar configuración
             $cmdsConfig = @("manager", "manager", "display current-configuration interface $numPort")
             $resConfig = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsConfig -Esperar 600
             
@@ -641,7 +712,6 @@ function Localizar-PuntoEthernet {
         }
     }
     elseif ($opcionManual -eq "2") {
-        # Escaneo de fuerza bruta
         Write-Host "`nSelecciona el Switch a escanear:" -ForegroundColor Cyan
         for ($i=0; $i -lt $listaSwitches.Count; $i++) {
             Write-Host "  $($i+1). $($listaSwitches[$i].Nombre) ($($listaSwitches[$i].IP))"
@@ -666,7 +736,6 @@ function Localizar-PuntoEthernet {
                 if ($resMacPuerto -match $mac3com -or $resMacPuerto -match $macCisco) {
                     Write-Host " [¡ENCONTRADO!]" -ForegroundColor Green
                     
-                    # Verificar configuración
                     $cmdsConfig = @("manager", "manager", "display current-configuration interface $puerto")
                     $resConfig = Send-3ComCommand -IP $swTarget.IP -Commands $cmdsConfig -Esperar 600
                     
