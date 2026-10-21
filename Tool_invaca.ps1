@@ -36,6 +36,7 @@ function Mostrar-Menu {
     Write-Host "7. Destrabar Cola de Impresión (Spooler)"
     Write-Host "8. Instalador de Software Esencial (Winget)"
     Write-Host "9. Localizar Punto Ethernet / Mapear Puerto de Switch"
+    Write-Host "A. Analizar Servidor (SRVFVICAS01)"
     Write-Host "S. Salir"
     Write-Host "=========================================" -ForegroundColor Cyan
 }
@@ -751,10 +752,364 @@ function Ejecutar-InstaladorSoftware {
     } while ($subSoft -ne "7")
 }
 
+function Analizar-Servidor {
+    Clear-Host
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host "   INVACA TOOLS - ANALIZADOR DE SERVIDOR            " -ForegroundColor Yellow
+    Write-Host "====================================================" -ForegroundColor Cyan
+
+    # Configuración del servidor a analizar
+    $servidorNombre = "SRVFVICAS01"
+    $servidorIP = "192.168.0.13"
+    
+    Write-Host "`n[+] Iniciando análisis del servidor: $servidorNombre ($servidorIP)" -ForegroundColor Green
+    Write-Host "    Fecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')" -ForegroundColor Gray
+    Write-Host "    Analizado por: $env:USERNAME en $env:COMPUTERNAME" -ForegroundColor Gray
+
+    # =========================================================================
+    # FASE 1: Conectividad Básica
+    # =========================================================================
+    Write-Host "`n[FASE 1] Verificando conectividad básica..." -ForegroundColor Yellow
+    
+    # Ping
+    Write-Host "    [1.1] Ping al servidor..." -ForegroundColor Gray
+    $ping = Test-Connection -ComputerName $servidorIP -Count 4 -Quiet -ErrorAction SilentlyContinue
+    if ($ping) {
+        Write-Host "        [OK] Servidor responde a ping" -ForegroundColor Green
+        $latencia = (Test-Connection -ComputerName $servidorIP -Count 1 | Select-Object -ExpandProperty ResponseTime)
+        Write-Host "        Latencia: ${latencia}ms" -ForegroundColor Gray
+    } else {
+        Write-Host "        [FAIL] Servidor no responde a ping" -ForegroundColor Red
+        Write-Host "        Posible causa: Firewall bloquea ICMP o servidor apagado" -ForegroundColor Yellow
+    }
+
+    # Resolución DNS
+    Write-Host "    [1.2] Resolución DNS..." -ForegroundColor Gray
+    try {
+        $dnsEntry = [System.Net.Dns]::GetHostEntry($servidorIP)
+        Write-Host "        Nombre DNS: $($dnsEntry.HostName)" -ForegroundColor Green
+        Write-Host "        Alias: $($dnsEntry.Aliases -join ', ')" -ForegroundColor Gray
+    } catch {
+        Write-Host "        [FAIL] No se pudo resolver DNS" -ForegroundColor Red
+    }
+
+    # =========================================================================
+    # FASE 2: Escaneo de Puertos (Descubrimiento de Servicios)
+    # =========================================================================
+    Write-Host "`n[FASE 2] Escaneando puertos comunes..." -ForegroundColor Yellow
+    
+    $puertosComunes = @{
+        21 = "FTP"
+        22 = "SSH"
+        23 = "Telnet"
+        25 = "SMTP (Email)"
+        53 = "DNS"
+        80 = "HTTP (Web)"
+        110 = "POP3 (Email)"
+        135 = "RPC"
+        139 = "NetBIOS"
+        143 = "IMAP (Email)"
+        389 = "LDAP (Active Directory)"
+        443 = "HTTPS (Web Seguro)"
+        445 = "SMB (Compartir Archivos)"
+        636 = "LDAPS (AD Seguro)"
+        993 = "IMAPS (Email Seguro)"
+        995 = "POP3S (Email Seguro)"
+        1433 = "SQL Server"
+        1521 = "Oracle DB"
+        3306 = "MySQL"
+        3389 = "RDP (Escritorio Remoto)"
+        5432 = "PostgreSQL"
+        5900 = "VNC"
+        8080 = "HTTP Alternativo"
+        8443 = "HTTPS Alternativo"
+        9090 = "Web Admin"
+    }
+
+    $puertosAbiertos = @()
+    $contador = 0
+    
+    foreach ($puerto in $puertosComunes.Keys) {
+        $contador++
+        if ($contador % 5 -eq 0) { Write-Host "        ... escaneando puerto $puerto" -ForegroundColor DarkGray }
+        
+        try {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcp.ReceiveTimeout = 1000
+            $tcp.SendTimeout = 1000
+            $connect = $tcp.BeginConnect($servidorIP, $puerto, $null, $null)
+            
+            if ($connect.AsyncWaitHandle.WaitOne(1000, $false)) {
+                $tcp.EndConnect($connect)
+                $puertosAbiertos += @{
+                    Puerto = $puerto
+                    Servicio = $puertosComunes[$puerto]
+                }
+                Write-Host "        [OPEN] Puerto $puerto - $($puertosComunes[$puerto])" -ForegroundColor Green
+            }
+            $tcp.Close()
+        } catch {
+            # Puerto cerrado o filtrado
+        }
+    }
+
+    if ($puertosAbiertos.Count -eq 0) {
+        Write-Host "        [!] No se encontraron puertos abiertos" -ForegroundColor Red
+        Write-Host "        Posible causa: Firewall muy restrictivo" -ForegroundColor Yellow
+    } else {
+        Write-Host "`n    [OK] $($puertosAbiertos.Count) puertos abiertos detectados" -ForegroundColor Green
+    }
+
+    # =========================================================================
+    # FASE 3: Identificación de Rol del Servidor
+    # =========================================================================
+    Write-Host "`n[FASE 3] Identificando rol del servidor..." -ForegroundColor Yellow
+    
+    $rolesDetectados = @()
+    
+    # Active Directory
+    if (389 -in $puertosAbiertos.Puerto -or 636 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Controlador de Dominio / Active Directory"
+    }
+    
+    # SQL Server
+    if (1433 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Servidor de Base de Datos (SQL Server)"
+    }
+    
+    # Web Server
+    if (80 -in $puertosAbiertos.Puerto -or 443 -in $puertosAbiertos.Puerto -or 8080 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Servidor Web (IIS/Apache/Nginx)"
+    }
+    
+    # File Server
+    if (445 -in $puertosAbiertos.Puerto -or 139 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Servidor de Archivos (SMB/CIFS)"
+    }
+    
+    # Email Server
+    if (25 -in $puertosAbiertos.Puerto -or 110 -in $puertosAbiertos.Puerto -or 143 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Servidor de Correo (SMTP/POP3/IMAP)"
+    }
+    
+    # RDP/Terminal Server
+    if (3389 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Servidor de Escritorio Remoto (RDP)"
+    }
+    
+    # DNS Server
+    if (53 -in $puertosAbiertos.Puerto) {
+        $rolesDetectados += "Servidor DNS"
+    }
+
+    if ($rolesDetectados.Count -gt 0) {
+        Write-Host "    [OK] Roles detectados:" -ForegroundColor Green
+        foreach ($rol in $rolesDetectados) {
+            Write-Host "        - $rol" -ForegroundColor Cyan
+        }
+    } else {
+        Write-Host "    [!] No se pudieron identificar roles específicos" -ForegroundColor Yellow
+    }
+
+    # =========================================================================
+    # FASE 4: Información del Sistema (vía WMI si es posible)
+    # =========================================================================
+    Write-Host "`n[FASE 4] Obteniendo información del sistema..." -ForegroundColor Yellow
+    
+    $credenciales = $null
+    $usarCredenciales = $false
+    
+    Write-Host "    [4.1] ¿El servidor requiere credenciales específicas?" -ForegroundColor Gray
+    $respCred = Read-Host "        (S/N - N intenta con credenciales actuales)"
+    
+    if ($respCred -eq 'S' -or $respCred -eq 's') {
+        $credenciales = Get-Credential -Message "Ingrese credenciales para $servidorNombre"
+        $usarCredenciales = $true
+    }
+
+    # Intentar conexión WMI
+    Write-Host "    [4.2] Conectando vía WMI/CIM..." -ForegroundColor Gray
+    
+    $wmiParams = @{
+        ComputerName = $servidorIP
+        ErrorAction = 'SilentlyContinue'
+    }
+    
+    if ($usarCredenciales -and $credenciales) {
+        $wmiParams.Credential = $credenciales
+    }
+
+    try {
+        $osInfo = Get-CimInstance Win32_OperatingSystem @wmiParams
+        if ($osInfo) {
+            Write-Host "        [OK] Conexión WMI exitosa" -ForegroundColor Green
+            Write-Host "        Sistema Operativo: $($osInfo.Caption)" -ForegroundColor Cyan
+            Write-Host "        Versión: $($osInfo.Version)" -ForegroundColor Gray
+            Write-Host "        Arquitectura: $($osInfo.OSArchitecture)" -ForegroundColor Gray
+            Write-Host "        Última reinicio: $($osInfo.LastBootUpTime)" -ForegroundColor Gray
+            Write-Host "        Uptime: $((New-TimeSpan -Start $osInfo.LastBootUpTime -End (Get-Date)).Days) días" -ForegroundColor Gray
+            
+            # Información de hardware
+            $cpuInfo = Get-CimInstance Win32_Processor @wmiParams | Select-Object -First 1
+            $ramInfo = Get-CimInstance Win32_ComputerSystem @wmiParams
+            
+            Write-Host "        Procesador: $($cpuInfo.Name)" -ForegroundColor Gray
+            Write-Host "        RAM Total: $([math]::Round($ramInfo.TotalPhysicalMemory / 1GB, 2)) GB" -ForegroundColor Gray
+            
+            # Servicios corriendo
+            Write-Host "`n    [4.3] Servicios activos..." -ForegroundColor Gray
+            $servicios = Get-CimInstance Win32_Service @wmiParams | Where-Object { $_.State -eq 'Running' } | Select-Object Name, DisplayName, StartMode | Sort-Object DisplayName
+            
+            Write-Host "        Total de servicios activos: $($servicios.Count)" -ForegroundColor Cyan
+            Write-Host "        Servicios críticos:" -ForegroundColor Gray
+            
+            $serviciosCriticos = $servicios | Where-Object { 
+                $_.Name -match '^(MSSQL|IIS|DNS|DHCP|W3SVC|Spooler|LanmanServer|Netlogon|KDC|NTDS)' 
+            }
+            
+            foreach ($servicio in $serviciosCriticos) {
+                Write-Host "            - $($servicio.DisplayName) ($($servicio.Name))" -ForegroundColor Yellow
+            }
+            
+            # Procesos principales
+            Write-Host "`n    [4.4] Procesos principales..." -ForegroundColor Gray
+            $procesos = Get-CimInstance Win32_Process @wmiParams | 
+                Sort-Object WorkingSetSize -Descending | 
+                Select-Object -First 10 Name, ProcessId, @{N='MemMB';E={[math]::Round($_.WorkingSetSize/1MB,2)}}
+            
+            foreach ($proc in $procesos) {
+                Write-Host "        $($proc.Name) (PID: $($proc.ProcessId)) - $($proc.MemMB) MB" -ForegroundColor Gray
+            }
+            
+            # Conexiones de red activas
+            Write-Host "`n    [4.5] Conexiones de red activas (top 20)..." -ForegroundColor Gray
+            
+            # Usar netstat vía comando remoto si es posible
+            $netstatCmd = "netstat -an | Select-String 'ESTABLISHED' | Select-Object -First 20"
+            
+            if ($usarCredenciales -and $credenciales) {
+                $session = New-PSSession -ComputerName $servidorIP -Credential $credenciales -ErrorAction SilentlyContinue
+            } else {
+                $session = New-PSSession -ComputerName $servidorIP -ErrorAction SilentlyContinue
+            }
+            
+            if ($session) {
+                $conexiones = Invoke-Command -Session $session -ScriptBlock {
+                    netstat -an | Select-String 'ESTABLISHED' | Select-Object -First 20
+                } -ErrorAction SilentlyContinue
+                
+                if ($conexiones) {
+                    Write-Host "        Conexiones establecidas:" -ForegroundColor Cyan
+                    foreach ($conn in $conexiones) {
+                        Write-Host "            $conn" -ForegroundColor Gray
+                    }
+                }
+                Remove-PSSession $session
+            } else {
+                Write-Host "        [!] No se pudo establecer sesión PowerShell remota" -ForegroundColor Yellow
+                Write-Host "        Posible causa: WinRM no está habilitado o firewall bloquea" -ForegroundColor Gray
+            }
+            
+        } else {
+            Write-Host "        [FAIL] No se pudo obtener información WMI" -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "        [FAIL] Error al conectar vía WMI: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # =========================================================================
+    # FASE 5: Recursos Compartidos (SMB)
+    # =========================================================================
+    Write-Host "`n[FASE 5] Verificando recursos compartidos..." -ForegroundColor Yellow
+    
+    try {
+        $compartidos = Get-CimInstance Win32_Share @wmiParams
+        if ($compartidos) {
+            Write-Host "    [OK] Recursos compartidos detectados:" -ForegroundColor Green
+            foreach ($comp in $compartidos) {
+                Write-Host "        - $($comp.Name) ($($comp.Path))" -ForegroundColor Cyan
+            }
+        } else {
+            Write-Host "    [!] No se encontraron recursos compartidos o sin permisos" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "    [FAIL] No se pudo consultar recursos compartidos" -ForegroundColor Red
+    }
+
+    # =========================================================================
+    # FASE 6: Resumen y Recomendaciones
+    # =========================================================================
+    Write-Host "`n====================================================" -ForegroundColor Cyan
+    Write-Host "   RESUMEN DEL ANÁLISIS" -ForegroundColor Yellow
+    Write-Host "====================================================" -ForegroundColor Cyan
+    
+    Write-Host "`nServidor: $servidorNombre" -ForegroundColor White
+    Write-Host "IP: $servidorIP" -ForegroundColor White
+    Write-Host "Estado: $(if ($ping) { 'EN LÍNEA' } else { 'FUERA DE LÍNEA' })" -ForegroundColor $(if ($ping) { 'Green' } else { 'Red' })
+    
+    if ($rolesDetectados.Count -gt 0) {
+        Write-Host "`nRoles identificados:" -ForegroundColor Green
+        foreach ($rol in $rolesDetectados) {
+            Write-Host "  • $rol" -ForegroundColor Cyan
+        }
+    }
+    
+    Write-Host "`nPuertos abiertos: $($puertosAbiertos.Count)" -ForegroundColor White
+    foreach ($p in $puertosAbiertos) {
+        Write-Host "  • Puerto $($p.Puerto) - $($p.Servicio)" -ForegroundColor Gray
+    }
+
+    Write-Host "`n[RECOMENDACIONES]:" -ForegroundColor Yellow
+    Write-Host "  1. Documentar los roles detectados en el inventario" -ForegroundColor Gray
+    Write-Host "  2. Verificar si todos los servicios son necesarios" -ForegroundColor Gray
+    Write-Host "  3. Revisar políticas de firewall y seguridad" -ForegroundColor Gray
+    Write-Host "  4. Actualizar documentación del servidor" -ForegroundColor Gray
+    Write-Host "  5. Considerar migración si el servidor es antiguo" -ForegroundColor Gray
+
+    Write-Host "`n====================================================" -ForegroundColor Cyan
+    
+    # Exportar reporte
+    Write-Host "`n[?] ¿Deseas exportar este análisis a un archivo?" -ForegroundColor Yellow
+    $exportar = Read-Host "    (S/N)"
+    
+    if ($exportar -eq 'S' -or $exportar -eq 's') {
+        $rutaDesktop = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
+        $archivoReporte = "$rutaDesktop\Analisis_$servidorNombre_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
+        
+        $contenido = @"
+ANÁLISIS DE SERVIDOR - INVACA TOOLS
+Fecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')
+Analizado por: $env:USERNAME
+
+SERVIDOR: $servidorNombre
+IP: $servidorIP
+Estado: $(if ($ping) { 'EN LÍNEA' } else { 'FUERA DE LÍNEA' })
+
+ROLES DETECTADOS:
+$($rolesDetectados -join "`n")
+
+PUERTOS ABIERTOS:
+$($puertosAbiertos | ForEach-Object { "Puerto $($_.Puerto) - $($_.Servicio)" } | Out-String)
+
+RECOMENDACIONES:
+1. Documentar los roles detectados en el inventario
+2. Verificar si todos los servicios son necesarios
+3. Revisar políticas de firewall y seguridad
+4. Actualizar documentación del servidor
+5. Considerar migración si el servidor es antiguo
+"@
+        
+        $contenido | Out-File -FilePath $archivoReporte -Encoding UTF8
+        Write-Host "[OK] Reporte guardado en: $archivoReporte" -ForegroundColor Green
+    }
+
+    Pause
+}
+
 # Bucle principal
 do {
     Mostrar-Menu
-    $opcion = Read-Host "Selecciona una opción (1-9 o S)"
+    $opcion = Read-Host "Selecciona una opción (1-9/A o S)"
     
     switch ($opcion) {
         "1" { Ejecutar-Activador }
@@ -766,6 +1121,7 @@ do {
         "7" { Ejecutar-DestrabarImpresoras }
         "8" { Ejecutar-InstaladorSoftware }
         "9" { Localizar-PuntoEthernet }
+        "A" { Analizar-Servidor }  # <-- NUEVA OPCIÓN
         "S" { 
             Write-Host "`nSaliendo de INVACA Tools. ¡Listo por hoy!" -ForegroundColor Yellow
             Start-Sleep -Seconds 1
